@@ -1,0 +1,24 @@
+# systemd unit for the Node signaling server.
+# Save as: /etc/systemd/system/meet-signaling.service
+# Then: sudo systemctl daemon-reload && sudo systemctl enable --now meet-signaling
+#
+# Adjust User and paths if you cloned somewhere other than /var/www/meet.
+
+[Unit]
+Description=Meet WebRTC signaling server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/meet/server
+ExecStart=/usr/bin/node index.js
+Restart=on-failure
+RestartSec=3
+Environment=NODE_ENV=production
+Environment=PORT=3001
+# Only allow your domain to connect (tighten from "*"):
+Environment=CLIENT_ORIGIN=https://meet.elloindia.in
+
+[Install]
+WantedBy=multi-user.target
