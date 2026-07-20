@@ -51,6 +51,11 @@ export class BackgroundProcessor {
   }
 
   // Start processing a camera video track; returns the processed MediaStream.
+  //
+  // Calling this again with a different track (e.g. the user picked another
+  // camera) just swaps the source: the canvas — and therefore the outgoing
+  // track peers are already receiving — stays the same, so switching cameras
+  // needs no renegotiation and no replaceTrack.
   async start(cameraTrack) {
     const stream = new MediaStream([cameraTrack]);
     this.video.srcObject = stream;
@@ -59,6 +64,8 @@ export class BackgroundProcessor {
     const settings = cameraTrack.getSettings();
     this.canvas.width = settings.width || 1280;
     this.canvas.height = settings.height || 720;
+
+    if (this.running) return this.outputStream;
 
     this.running = true;
     this._loop();

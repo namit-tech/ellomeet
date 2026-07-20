@@ -215,20 +215,55 @@ label {
   color: var(--text);
 }
 
-.room-body { flex: 1; display: flex; min-height: 0; }
+.room-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.room-timer { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-/* ---------- Video grid ---------- */
+.room-body { flex: 1; display: flex; min-height: 0; }
+.stage-wrap { flex: 1; position: relative; display: flex; min-height: 0; min-width: 0; }
+
+/* ---------- Video grid / spotlight ---------- */
+
+.stage { flex: 1; min-height: 0; min-width: 0; }
 
 .grid {
-  flex: 1;
   display: grid;
   gap: 14px;
   padding: 18px;
-  min-height: 0;
 }
 .grid-1 { grid-template-columns: 1fr; }
 .grid-2 { grid-template-columns: 1fr 1fr; }
 .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+
+/* Someone is presenting or pinned: one big tile, everyone else in a filmstrip. */
+.spotlight {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+}
+.stage-main { flex: 1; min-height: 0; display: flex; }
+.stage-main .tile { flex: 1; }
+/* A shared screen must never be cropped — show the whole thing. */
+.stage-main .tile.pinned video { object-fit: contain; background: #000; }
+
+.filmstrip {
+  display: flex;
+  gap: 12px;
+  height: 132px;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+.filmstrip .tile { aspect-ratio: 16 / 9; height: 100%; flex: 0 0 auto; }
 
 .tile {
   position: relative;
@@ -261,14 +296,16 @@ label {
   left: 10px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   background: rgba(0, 0, 0, .55);
   color: #fff;
   padding: 5px 11px;
   border-radius: 8px;
   font-size: 13px;
+  max-width: calc(100% - 20px);
   backdrop-filter: blur(6px);
 }
+.tile-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tile-you {
   font-size: 10.5px;
   text-transform: uppercase;
@@ -277,6 +314,78 @@ label {
   padding: 2px 6px;
   border-radius: 5px;
 }
+.tile-mic-off { color: var(--danger); flex-shrink: 0; }
+.tile-crown { color: #f5b544; flex-shrink: 0; }
+
+/* Ring around whoever is talking. */
+.tile.speaking { border-color: var(--primary); }
+.tile.speaking::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 15px;
+  border: 3px solid var(--primary);
+  pointer-events: none;
+}
+
+.tile-top {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  gap: 6px;
+}
+.tile-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(0, 0, 0, .6);
+  color: #fff;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  backdrop-filter: blur(6px);
+}
+.tile-chip.share { background: var(--primary); }
+.tile-chip.warn { background: var(--danger); }
+
+.tile-hand {
+  position: absolute;
+  top: 10px;
+  right: 46px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: #f5b544;
+  color: #1a1206;
+  animation: hand-wave 1.6s ease-in-out infinite;
+}
+@keyframes hand-wave {
+  0%, 100% { transform: rotate(-8deg); }
+  50% { transform: rotate(8deg); }
+}
+
+.tile-pin {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  border: none;
+  background: rgba(0, 0, 0, .55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s;
+  backdrop-filter: blur(6px);
+}
+.tile:hover .tile-pin, .tile.pinned .tile-pin { opacity: 1; }
+.tile-pin:hover { background: var(--primary); }
 
 /* ============================================================
    Controls (bottom bar)
@@ -319,7 +428,7 @@ label {
    Side panels (chat + background)
    ============================================================ */
 
-.chat, .bg-panel {
+.panel, .bg-panel {
   width: 328px;
   border-left: 1px solid var(--border);
   background: var(--panel);
@@ -328,7 +437,7 @@ label {
   min-height: 0;
 }
 
-.chat-header, .bg-panel-header {
+.panel-header, .bg-panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -338,11 +447,24 @@ label {
   font-size: 15px;
 }
 
+.panel-note { color: var(--muted); font-size: 12px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: .05em; }
+.hint { color: var(--muted); font-size: 12.5px; line-height: 1.45; margin: 0; }
+
 .chat-messages { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
-.chat-empty { color: var(--muted); font-size: 13px; }
 .chat-msg { display: flex; flex-direction: column; gap: 3px; }
+.chat-meta { display: flex; align-items: baseline; gap: 8px; }
 .chat-msg strong { font-size: 12px; color: var(--primary); }
+.chat-msg.mine strong { color: var(--muted); }
+.chat-meta time { font-size: 11px; color: var(--muted); }
 .chat-msg span { font-size: 14px; line-height: 1.4; }
+.chat-system {
+  align-self: center;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--panel-2);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
 .chat-input { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
 .chat-input input { flex: 1; }
 
@@ -418,12 +540,337 @@ label {
 }
 
 /* ============================================================
+   Pre-join ("green room")
+   ============================================================ */
+
+.prejoin {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  padding: 32px;
+  flex-wrap: wrap;
+}
+
+.prejoin-preview {
+  position: relative;
+  width: min(640px, 100%);
+  aspect-ratio: 16 / 9;
+  background: var(--tile-bg);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.prejoin-preview video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.prejoin-preview video.mirrored { transform: scaleX(-1); }
+
+.prejoin-off {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--tile-bg);
+  font-size: 14px;
+}
+
+.prejoin-toggles {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+}
+.round {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, .55);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: filter .15s;
+}
+.round:hover { filter: brightness(1.2); }
+.round.off { background: var(--danger); border-color: var(--danger); }
+
+.prejoin-side {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.prejoin-side h2 { margin: 0; font-size: 24px; letter-spacing: -0.02em; }
+
+/* ============================================================
+   Selects (device pickers)
+   ============================================================ */
+
+select {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 14px;
+  width: 100%;
+  cursor: pointer;
+}
+select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
+}
+.lbl { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ============================================================
+   Participants panel
+   ============================================================ */
+
+.pt-list { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+
+.pt-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 8px;
+  border-radius: 11px;
+}
+.pt-row:hover { background: var(--panel-2); }
+
+.pt-avatar {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--primary);
+  color: var(--primary-contrast);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.pt-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.pt-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+.pt-tag.host {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: color-mix(in srgb, #f5b544 20%, transparent);
+  border-color: #f5b544;
+  color: #f5b544;
+}
+.pt-state { display: flex; align-items: center; gap: 7px; color: var(--muted); }
+.pt-state .off { color: var(--danger); }
+.pt-state .on-hand { color: #f5b544; }
+.pt-state .on-share { color: var(--primary); }
+
+.pt-actions { display: flex; gap: 4px; }
+.icon-btn.danger:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+.icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+.waiting-list {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.waiting-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.waiting-actions { display: flex; gap: 6px; }
+
+.host-tools {
+  border-top: 1px solid var(--border);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.btn.danger-btn { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+/* ============================================================
+   Settings panel
+   ============================================================ */
+
+.settings-body { padding: 16px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto; }
+
+.shortcuts { display: flex; flex-direction: column; gap: 8px; }
+.shortcuts div { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.shortcuts span { margin-left: auto; }
+kbd {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text);
+}
+
+/* ============================================================
+   Reactions
+   ============================================================ */
+
+.reaction-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 10;
+}
+
+.reaction-float {
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  animation: float-up 4s ease-out forwards;
+}
+.reaction-emoji { font-size: 44px; line-height: 1; }
+.reaction-name {
+  font-size: 11px;
+  color: #fff;
+  background: rgba(0, 0, 0, .55);
+  padding: 2px 8px;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+@keyframes float-up {
+  0% { transform: translateY(0) scale(.6); opacity: 0; }
+  12% { transform: translateY(-30px) scale(1); opacity: 1; }
+  75% { opacity: 1; }
+  100% { transform: translateY(-70vh) scale(1); opacity: 0; }
+}
+
+.reaction-picker {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 12px;
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  z-index: 30;
+}
+.reaction-btn {
+  width: 42px;
+  height: 42px;
+  font-size: 22px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  transition: transform .12s, background .12s;
+}
+.reaction-btn:hover { background: var(--panel-2); transform: scale(1.18); }
+
+/* ============================================================
+   Toasts / badges
+   ============================================================ */
+
+.controls { position: relative; }
+
+.badge {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff !important;
+  font-size: 10px !important;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+}
+
+.toast {
+  position: fixed;
+  bottom: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  padding: 11px 18px;
+  border-radius: 12px;
+  font-size: 14px;
+  z-index: 40;
+}
+
+.knock-toast {
+  position: fixed;
+  bottom: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--primary);
+  box-shadow: var(--shadow);
+  padding: 11px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+  z-index: 40;
+}
+.knock-cta { color: var(--primary); font-weight: 600; }
+
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
    Responsive
    ============================================================ */
 
 @media (max-width: 720px) {
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; grid-template-rows: none; }
-  .chat, .bg-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; box-shadow: var(--shadow); }
+  .panel, .bg-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; box-shadow: var(--shadow); }
   .ctrl { min-width: 60px; padding: 9px 11px; }
   .ctrl span { font-size: 10px; }
+  .filmstrip { height: 96px; }
+  .prejoin { flex-direction: column; gap: 20px; padding: 20px; }
+  .room-timer, .room-code { display: none; }
 }
