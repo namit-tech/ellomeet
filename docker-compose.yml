@@ -1,0 +1,49 @@
+services:
+  server:
+    build: ./server
+    container_name: ellomeet-server
+    restart: unless-stopped
+    env_file:
+      - ./server/.env
+    ports:
+      - "127.0.0.1:8091:3001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 256m
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  client:
+    build:
+      context: ./client
+      args:
+        VITE_SIGNALING_URL: https://meetapi.elloindia.in
+    container_name: ellomeet-client
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8090:8080"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    mem_limit: 128m
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
