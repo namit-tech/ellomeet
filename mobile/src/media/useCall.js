@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { AudioSession, registerGlobals } from '@livekit/react-native';
 import { ConnectionState, Room, RoomEvent, Track, VideoPresets, VideoQuality } from 'livekit-client';
-import { connectSocket, socket } from './signaling';
+import { connectSocket, socket, SIGNALING_URL } from './signaling';
 
 // Must run before any LiveKit object is constructed — it installs the WebRTC
 // globals (RTCPeerConnection, MediaStream, …) that livekit-client expects to
@@ -43,6 +43,7 @@ export function useCall({ roomId, name }) {
   const [room, setRoom] = useState({ hostId: null, locked: false, participants: [], waiting: [] });
   const [messages, setMessages] = useState([]);
   const [speaking, setSpeaking] = useState({});
+  const [maxPeers, setMaxPeers] = useState(null);
   const [status, setStatus] = useState('connecting');
   const [notice, setNotice] = useState(null);
 
@@ -54,6 +55,7 @@ export function useCall({ roomId, name }) {
   const lkRef = useRef(null);
   const publishedCamRef = useRef(null);
   const hasJoinedRef = useRef(false);
+  const credsTimerRef = useRef(null);
 
   const emitState = useCallback(patch => socket.emit('state', patch), []);
 
@@ -116,6 +118,8 @@ export function useCall({ roomId, name }) {
     const onLiveKitCreds = async ({ url, token }) => {
       if (cancelled || hasJoinedRef.current) return;
       hasJoinedRef.current = true;
+      clearTimeout(credsTimerRef.current);
+      console.log('[call] livekit credentials received, connecting to', url);
 
       try {
         // Route audio as a call rather than as media playback.
@@ -157,14 +161,26 @@ export function useCall({ roomId, name }) {
 
     const handlers = {
       livekit: onLiveKitCreds,
-      joined: ({ selfId: id, chat }) => {
+      joined: ({ selfId: id, chat, maxPeers: cap }) => {
+        console.log('[call] joined room as', id, 'cap', cap);
         setSelfId(id);
         setMessages(chat || []);
+        setMaxPeers(cap ?? null);
+
+        // Admission should be followed immediately by a media credential. If it
+        // is not, the server has no LiveKit configured — otherwise this fails
+        // completely silently: a black screen and a timer that never starts.
+        credsTimerRef.current = setTimeout(() => {
+          if (!hasJoinedRef.current && !cancelled) setStatus('no-media-server');
+        }, 6000);
       },
       // The host approved us. Our socket may be held by a different server
       // instance than theirs, so admission is a handshake: we ask again.
       admitted: () => socket.emit('join', joinPayload),
-      'room-state': setRoom,
+      'room-state': (state) => {
+        console.log('[call] roster:', state?.participants?.length, 'participant(s)');
+        setRoom(state);
+      },
       chat: msg => setMessages(prev => [...prev, msg]),
       'force-mute': async ({ by }) => {
         await lk.localParticipant.setMicrophoneEnabled(false);
@@ -180,12 +196,32 @@ export function useCall({ roomId, name }) {
     };
     for (const [event, handler] of Object.entries(handlers)) socket.on(event, handler);
 
+    const onConnect = () => {
+      console.log('[call] socket connected', socket.id, '->', SIGNALING_URL);
+      socket.emit('join', joinPayload);
+    };
+    const onConnectError = (err) => {
+      console.warn('[call] socket connect_error:', err?.message || err);
+      if (!cancelled) setStatus('offline');
+    };
+    const onDisconnect = (reason) => console.warn('[call] socket disconnected:', reason);
+
+    socket.on('connect', onConnect);
+    socket.on('connect_error', onConnectError);
+    socket.on('disconnect', onDisconnect);
+
+    // Join on connect rather than immediately: emitting before the socket is
+    // up queues the event, and if the connection never establishes we sit
+    // silently forever instead of reporting it.
     connectSocket();
-    socket.emit('join', joinPayload);
 
     return () => {
       cancelled = true;
       for (const [event, handler] of Object.entries(handlers)) socket.off(event, handler);
+      socket.off('connect', onConnect);
+      socket.off('connect_error', onConnectError);
+      socket.off('disconnect', onDisconnect);
+      clearTimeout(credsTimerRef.current);
       socket.emit('leave');
       lk.disconnect();
       AudioSession.stopAudioSession();
@@ -288,6 +324,7 @@ export function useCall({ roomId, name }) {
     localScreen,
     peers,
     room,
+    maxPeers,
     messages,
     speaking,
     status,

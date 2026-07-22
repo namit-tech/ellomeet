@@ -212,6 +212,21 @@ cause nine times out of ten.
 
 ## 9. Verify the whole thing
 
+**First, prove the proxy actually works.** A status code is not enough — check
+the body:
+
+```bash
+curl -s https://meet.elloindia.in/health
+# MUST print {"ok":true}
+# If it prints HTML, Nginx is serving the SPA for everything and the Node
+# server is not proxied. Nothing will connect.
+
+curl -s "https://meet.elloindia.in/socket.io/?EIO=4&transport=polling" | head -c 60
+# MUST start with 0{"sid":"...
+```
+
+Then:
+
 1. Open **https://meet.elloindia.in** in two different browsers/devices.
 2. Create a meeting in one, paste the invite link into the other.
 3. You should see two-way video. Try **Effects → Blur** and screen share.
@@ -243,6 +258,7 @@ No Nginx reload needed for client rebuilds — it serves the fresh `dist` files.
 |---|---|
 | Camera blocked | Make sure you're on **https://**, not http. |
 | App loads but no connection between peers | Check `sudo systemctl status meet-signaling` and browser console; verify `CLIENT_ORIGIN` matches the domain exactly. |
+| **App loads but nothing connects — black screen, 0 participants** | Nginx is serving `index.html` for every path, so the Node server is never reached. Check with `curl https://your-domain/health` — it must print `{"ok":true}`, **not HTML**. If you get HTML, the `/socket.io/` and `/livekit` location blocks are missing from the active site config. Re-copy `deploy/nginx.conf`, `sudo nginx -t`, `sudo systemctl reload nginx`. |
 | **Joins fine, roster correct, but no audio or video** | The UDP media range is closed. Re-check step 8 — this is the most common failure by a wide margin. |
 | "Media server not configured" screen | `LIVEKIT_*` missing from `server/.env`. Restart the server after adding them. |
 | Connects locally but not across networks | TURN. Confirm 3478/udp and 5349/tcp are open and that LiveKit can read the Let's Encrypt cert (`setfacl` in step 4b). |

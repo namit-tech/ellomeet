@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -9,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCall } from '../media/useCall';
 
 // Filmstrip page size. Matches the web client's STRIP_PAGE_SIZE.
@@ -47,12 +47,19 @@ export default function CallScreen({ roomId, name, onLeave }) {
 }
 
 function Call({ roomId, name, onLeave }) {
+  // React Native's own SafeAreaView is a no-op on Android (and RN now warns
+  // that it is deprecated). Android 15+ enforces edge-to-edge, so without
+  // real insets the header renders underneath the status bar and the controls
+  // sit under the gesture pill — which is exactly what the device showed.
+  const insets = useSafeAreaInsets();
+
   const {
     selfId,
     localCamera,
     localScreen,
     peers,
     room,
+    maxPeers,
     speaking,
     status,
     notice,
@@ -115,14 +122,33 @@ function Call({ roomId, name, onLeave }) {
   if (status === 'ended') {
     return <Message title="Meeting ended" body="The host ended this meeting." action={{ label: 'Back', onPress: onLeave }} />;
   }
+  if (status === 'no-media-server') {
+    return (
+      <Message
+        title="Media server not configured"
+        body="Connected to the signalling server, but it issued no LiveKit credentials, so no audio or video can flow. Set LIVEKIT_URL / _API_KEY / _API_SECRET on the server."
+        action={{ label: 'Back', onPress: onLeave }}
+      />
+    );
+  }
+  if (status === 'offline') {
+    return (
+      <Message
+        title="Can't reach the server"
+        body={'Could not connect to the signalling server. Check the device has network and that SIGNALING_URL is reachable from the phone.'}
+        action={{ label: 'Back', onPress: onLeave }}
+      />
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#0d0f13" />
+    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <StatusBar barStyle="light-content" />
 
       <View style={styles.header}>
         <Text style={styles.headerText}>
-          Room {roomId} · {room.participants.length}/4
+          Room {roomId} · {room.participants.length}
+          {maxPeers ? `/${maxPeers}` : ''}
         </Text>
         {status === 'connecting' && <ActivityIndicator size="small" color="#4c8dff" />}
       </View>
@@ -190,7 +216,7 @@ function Call({ roomId, name, onLeave }) {
         <Ctrl label="Hand" icon="✋" onPress={toggleHand} active={handRaised} />
         <Ctrl label="Leave" icon="📞" onPress={onLeave} danger />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -208,7 +234,7 @@ function Ctrl({ label, icon, onPress, off, active, danger }) {
 
 function Message({ title, body, action, spinner }) {
   return (
-    <SafeAreaView style={[styles.root, styles.centered]}>
+    <View style={[styles.root, styles.centered]}>
       {spinner && <ActivityIndicator size="large" color="#4c8dff" />}
       <Text style={styles.msgTitle}>{title}</Text>
       {body ? <Text style={styles.msgBody}>{body}</Text> : null}
@@ -217,7 +243,7 @@ function Message({ title, body, action, spinner }) {
           <Text style={styles.msgBtnText}>{action.label}</Text>
         </TouchableOpacity>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
