@@ -13,9 +13,7 @@ import { io } from 'socket.io-client';
  * which forwards the device's localhost:3001 to the development machine. That
  * survives changing Wi-Fi networks, unlike hardcoding a LAN IP.
  */
-export const SIGNALING_URL = __DEV__
-  ? 'http://localhost:3001'
-  : 'https://meet.elloindia.in';
+export const SIGNALING_URL = 'https://meetapi.elloindia.in';
 
 export const socket = io(SIGNALING_URL, {
   autoConnect: false,

@@ -19,8 +19,7 @@ rtc:
   tcp_port: 7881
 
 keys:
-  # CHANGE BOTH. Generate with: docker run --rm livekit/livekit-server generate-keys
-  APIchangeme: changeme_secret_at_least_32_characters_long
+  APIpNLFnaTtsmbA: 8NwFpazNkldjzcQP7BGDBrorbR8EnXdtY792DWTrciG
 
 # LiveKit's built-in TURN. Once this is running and proven, the Metered
 # dependency in ice.service.js can be retired.

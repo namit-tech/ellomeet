@@ -1,4 +1,4 @@
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
 
 /**
  * LiveKit access tokens.
@@ -30,11 +30,33 @@ export function createLiveKitService({
   url = process.env.LIVEKIT_URL || "",
   apiKey = process.env.LIVEKIT_API_KEY || "",
   apiSecret = process.env.LIVEKIT_API_SECRET || "",
+  // Control-plane calls (CreateRoom etc.) go straight to the SFU on the same
+  // host instead of out through the public domain — that path is for
+  // browsers and goes through infra this traffic was never meant to cross.
+  internalUrl = process.env.LIVEKIT_INTERNAL_URL || url.replace(/^ws/, "http"),
 } = {}) {
   const configured = !!(url && apiKey && apiSecret);
 
   if (!configured) {
     console.warn("[livekit] not configured — set LIVEKIT_URL / _API_KEY / _API_SECRET");
+  }
+
+  const roomService = configured ? new RoomServiceClient(internalUrl, apiKey, apiSecret) : null;
+
+  /**
+   * auto_create is off in livekit.yaml on purpose — a client should never be
+   * able to conjure a room nobody was admitted to. This is the one place
+   * that's allowed to create one, right before handing out a token for it.
+   * CreateRoom is idempotent: called again on a room that already exists, it
+   * just returns that room instead of erroring.
+   */
+  async function ensureRoom(roomId) {
+    if (!roomService) return;
+    try {
+      await roomService.createRoom({ name: roomId });
+    } catch (err) {
+      console.error("[livekit] ensureRoom failed:", err.message);
+    }
   }
 
   /**
@@ -71,5 +93,5 @@ export function createLiveKitService({
     }
   }
 
-  return { issueToken, configured };
+  return { issueToken, ensureRoom, configured };
 }
