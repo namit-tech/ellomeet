@@ -10,6 +10,10 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json index.js ./
+COPY routes ./routes
+COPY controllers ./controllers
+COPY services ./services
+COPY validation ./validation
 USER node
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

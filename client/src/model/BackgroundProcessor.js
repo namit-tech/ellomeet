@@ -1,4 +1,25 @@
-import { SelfieSegmentation } from "@mediapipe/selfie_segmentation";
+// @mediapipe/selfie_segmentation is a legacy script that attaches its exports
+// to the real global object at runtime instead of using proper ESM/CJS
+// exports. A bundled import always breaks: a named import resolves to
+// undefined (Rollup's CJS interop wraps it in a namespace object the script
+// never actually writes to), and a bare side-effect import gets tree-shaken
+// away entirely (the package declares "sideEffects": []). So it's loaded the
+// way it was actually designed to run — as a real <script> tag — and read off
+// `window` once it has executed.
+let scriptLoad = null;
+function loadSelfieSegmentationScript() {
+  if (window.SelfieSegmentation) return Promise.resolve();
+  if (!scriptLoad) {
+    scriptLoad = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = `${import.meta.env.BASE_URL || "/"}mediapipe/selfie_segmentation.js`;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("Failed to load selfie_segmentation.js"));
+      document.head.appendChild(script);
+    });
+  }
+  return scriptLoad;
+}
 
 /**
  * BackgroundProcessor
@@ -37,7 +58,8 @@ export class BackgroundProcessor {
 
   async init() {
     try {
-      this.segmentation = new SelfieSegmentation({
+      await loadSelfieSegmentationScript();
+      this.segmentation = new window.SelfieSegmentation({
         // Assets are copied into /mediapipe by vite-plugin-static-copy.
         locateFile: (file) => `${import.meta.env.BASE_URL || "/"}mediapipe/${file}`,
       });
