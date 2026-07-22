@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Link as LinkIcon, Check, Users, Lock, Loader2 } from "lucide-react";
-import { useWebRTC } from "./hooks/useWebRTC.js";
-import { useSpeaking } from "./hooks/useSpeaking.js";
+import { useLiveKit } from "./hooks/useLiveKit.js";
 import { useTheme } from "./hooks/useTheme.js";
-import { loadDevicePrefs } from "./lib/devices.js";
+import { loadDevicePrefs } from "./model/devices.js";
 import PreJoin from "./components/PreJoin.jsx";
 import VideoGrid from "./components/VideoGrid.jsx";
 import Controls from "./components/Controls.jsx";
@@ -53,13 +52,16 @@ export default function Room() {
 function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
   const {
     selfId,
-    localStream,
+    localCamera,
+    localScreen,
     peers,
+    speaking,
     room,
     isHost,
     messages,
     reactions,
     quality,
+    maxPeers,
     status,
     notice,
     bgReady,
@@ -77,12 +79,13 @@ function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
     setBackground,
     sendChat,
     host,
-  } = useWebRTC({ roomId, name, initial: config });
+  } = useLiveKit({ roomId, name, initial: config });
 
   const [panel, setPanel] = useState(null); // null | chat | people | bg | settings
   const [reactionsOpen, setReactionsOpen] = useState(false);
   const [activeBg, setActiveBg] = useState("none");
-  const [pinnedId, setPinnedId] = useState(null);
+  const [pinnedId, setPinnedId] = useState(null); // sticky choice
+  const [selectedId, setSelectedId] = useState(null); // last clicked tile
   const [speakerId, setSpeakerId] = useState(config.speakerId || loadDevicePrefs().speakerId || "");
   const [copied, setCopied] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -110,16 +113,6 @@ function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
     return () => clearInterval(t);
   }, [status]);
 
-  // Who's talking right now — drives the ring around the tile.
-  const streams = useMemo(() => {
-    const map = {};
-    if (selfId && localStream) map[selfId] = localStream;
-    for (const [id, p] of Object.entries(peers)) if (p.stream) map[id] = p.stream;
-    return map;
-  }, [selfId, localStream, peers]);
-
-  const speaking = useSpeaking(streams);
-
   // Keyboard shortcuts, the way every other call app does them.
   useEffect(() => {
     function onKey(e) {
@@ -140,10 +133,22 @@ function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleAudio, toggleVideo, toggleHand]);
 
-  // A pinned participant who left shouldn't strand the spotlight.
+  // Someone who left shouldn't strand the spotlight. Pins and selections are
+  // tile keys, and a presenter's screen tile is keyed "<id>:screen", so compare
+  // on the participant half.
   useEffect(() => {
-    if (pinnedId && !room.participants.some((p) => p.id === pinnedId)) setPinnedId(null);
-  }, [room.participants, pinnedId]);
+    const gone = (key) => key && !room.participants.some((p) => p.id === key.split(":")[0]);
+    if (gone(pinnedId)) setPinnedId(null);
+    if (gone(selectedId)) setSelectedId(null);
+  }, [room.participants, pinnedId, selectedId]);
+
+  // A selected screen that stopped being shared should release the stage rather
+  // than hold it on a tile that no longer exists.
+  useEffect(() => {
+    if (!selectedId?.endsWith(":screen")) return;
+    const owner = room.participants.find((p) => p.id === selectedId.split(":")[0]);
+    if (!owner?.sharing) setSelectedId(null);
+  }, [room.participants, selectedId]);
 
   function copyLink() {
     navigator.clipboard.writeText(window.location.href);
@@ -178,7 +183,7 @@ function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
     return (
       <Message
         title="Room is full"
-        body="This meeting already has 4 participants — the limit for a peer-to-peer mesh."
+        body={`This meeting is at its limit of ${maxPeers || ""} participants.`.replace("  ", " ")}
         action={{ label: "Back home", onClick: onExit }}
       />
     );
@@ -214,6 +219,16 @@ function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
     );
   }
 
+  if (status === "no-media-server") {
+    return (
+      <Message
+        title="Media server not configured"
+        body="The signalling server is up, but it has no LiveKit credentials, so no audio or video can flow. Set LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET in server/.env and restart it."
+        action={{ label: "Retry", onClick: () => window.location.reload() }}
+      />
+    );
+  }
+
   if (status === "error") {
     return (
       <Message
@@ -231,7 +246,7 @@ function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
       <header className="room-header">
         <div className="room-info">
           <span className="room-badge">
-            <Users size={15} /> {participants.length} / 4
+            <Users size={15} /> {participants.length}{maxPeers ? ` / ${maxPeers}` : ""}
           </span>
           <span className="room-code">
             Room <strong>{roomId}</strong>
@@ -262,14 +277,16 @@ function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
           <VideoGrid
             participants={participants}
             peers={peers}
-            localStream={localStream}
+            localCamera={localCamera}
+            localScreen={localScreen}
             selfId={selfId}
             speaking={speaking}
             quality={quality}
             pinnedId={pinnedId}
             onTogglePin={setPinnedId}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
             speakerId={speakerId}
-            sharing={sharing}
           />
           <ReactionOverlay reactions={reactions} />
         </div>

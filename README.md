@@ -1,79 +1,93 @@
-# 🎥 Meet — a minimal Google Meet / Zoom clone
+# 🎥 Meet — a Google Meet / Zoom style video app
 
-Peer-to-peer video calls for small groups (2–4 people) using **WebRTC**.
-Video/audio flows directly between browsers; the Node server only handles
-signaling and chat relay.
+Group video calls for up to 20 people, on web and Android, using **WebRTC**
+through a self-hostable **LiveKit** SFU.
+
+**Media goes through a server.** Everyone publishes once and the SFU forwards to
+everyone else — that is what makes 20 people possible, and it is why this is not
+end-to-end private. An earlier version was a true peer-to-peer mesh; that
+topology caps out around 4–6 people (see [PLAN.md](PLAN.md) §1).
+
+The Node server owns the *rules* — roster, host controls, waiting room, lock,
+chat — and never touches media.
 
 ## Structure
 
 ```
 meet/
-├── server/   # Node + Express + Socket.IO signaling server
-└── client/   # React + Vite frontend (WebRTC mesh)
+├── server/   # Node + Express + Socket.IO — rules, roster, LiveKit tokens
+├── client/   # React + Vite web client
+├── mobile/   # React Native (Android; iOS not built)
+└── deploy/   # LiveKit SFU + observability compose files
 ```
 
 ## Run it locally
 
-Open two terminals.
+You need three things: the server, the client, and an SFU.
 
-**1. Signaling server**
+**1. An SFU.** Fastest is [LiveKit Cloud](https://cloud.livekit.io)'s free tier —
+create a project, copy the URL and key pair. Self-hosting instead? See
+[deploy/livekit/README.md](deploy/livekit/README.md).
+
 ```bash
 cd server
+cp .env.example .env     # then fill in LIVEKIT_URL / _API_KEY / _API_SECRET
 npm install
-npm run dev        # http://localhost:3001
+npm run dev              # http://localhost:3001
 ```
+
+Without those three variables the app runs but no audio or video can flow — the
+UI will say so rather than sitting on a black tile.
 
 **2. Client**
 ```bash
 cd client
 npm install
-npm run dev        # http://localhost:5173
+npm run dev              # http://localhost:5173
 ```
 
-Open http://localhost:5173, click **New meeting**, then open the same room
-URL in a second browser tab/window (or another device on your network) to see
-the call connect.
+Open http://localhost:5173, click **New meeting**, then open the same room URL
+in another tab or device.
 
-> 💡 To test between two devices, open the client on your LAN IP
-> (Vite prints it, e.g. `http://192.168.1.x:5173`). The client auto-points its
-> signaling connection at the same host on port 3001.
+> 💡 The client points its signalling connection at the same host on port 3001,
+> so opening it on your LAN IP works for testing across devices. Media goes to
+> the SFU regardless of where the page is served from — you can develop locally
+> against a remote SFU.
+
+**3. Mobile** — see [mobile/README.md](mobile/README.md).
 
 ## Features
 
 - Create / join rooms via shareable link
-- Live video + audio, up to 4 in a mesh
-- Mute mic / toggle camera
-- Screen sharing
-- **Virtual backgrounds** — blur, built-in presets, or upload your own image
-  (on-device segmentation via MediaPipe; nothing leaves the browser)
-- **Light & dark themes** — proper themed UI, remembers your choice
-- Professional icon-based UI (lucide icons, no emojis)
-- Text chat
-- Responsive tile grid
+- Up to 20 participants, with paginated tiles and active-speaker spotlight
+- Multiple people can present at once; each screen is its own tile
+- Pin, click-to-spotlight, and fullscreen on any tile
+- Screen sharing (desktop browsers and Android; **not** mobile browsers — no
+  browser on iOS or Android implements `getDisplayMedia`)
+- Mute / camera toggle, raise hand, reactions, text chat
+- Host controls: mute, remove, lock, waiting room, end for all
+- **Virtual backgrounds** — blur or your own image, web only
+- Light & dark themes
 
 ### Notes on virtual backgrounds
 
-- Segmentation runs **entirely in the browser** (MediaPipe Selfie Segmentation).
-  The model/wasm files are self-hosted at `/mediapipe/*` (copied from the npm
-  package at build time — no external CDN).
-- It is CPU-intensive; best on Chrome/Edge on a reasonably modern machine.
-- If the model can't load, the app gracefully falls back to a normal camera
-  feed so calls still work.
+- Segmentation runs **entirely in the browser** (MediaPipe Selfie
+  Segmentation), self-hosted at `/mediapipe/*` — no external CDN.
+- Loaded lazily: the model is only fetched when someone actually picks an
+  effect, and the processor is detached when set back to "none" so nobody pays
+  for a canvas pipeline they aren't using.
+- Not available on mobile — React Native has no `<canvas>`.
 
-## Going to production — read this
+## Going to production
 
-1. **TURN server required.** STUN alone (the default config) fails on ~10–20%
-   of real networks. Add TURN credentials in
-   [`client/src/lib/iceServers.js`](client/src/lib/iceServers.js). Easiest:
-   a free TURN service like metered.ca or Twilio, or self-host coturn.
-2. **HTTPS is mandatory.** Browsers block camera/mic on non-secure origins
+1. **HTTPS is mandatory.** Browsers block camera/mic on non-secure origins
    (localhost is exempt for dev).
-3. **Deploy:** client → Vercel/Netlify (static), server → Render/Railway/Fly.io
-   (must support WebSockets). Set `VITE_SIGNALING_URL` on the client and
-   `CLIENT_ORIGIN` on the server.
+2. **Run an SFU** — [deploy/livekit/](deploy/livekit/). The step that catches
+   people is opening the UDP media range; signalling connects over TCP and the
+   call then carries no audio or video.
+3. **Scaling out** — set `REDIS_URL` and rooms move to Valkey with Socket.IO
+   broadcasts routed through it, so N server instances behave as one.
+4. **Measure before sizing** — [deploy/observability/](deploy/observability/).
 
-## Beyond 4 people
-
-Full mesh doesn't scale past ~4 (every peer connects to every other). For
-larger rooms you'd swap the client to talk to an **SFU** media server
-(mediasoup, LiveKit) instead of direct peer connections.
+Capacity arithmetic, cost per provider, and the remaining roadmap are in
+[PLAN.md](PLAN.md).

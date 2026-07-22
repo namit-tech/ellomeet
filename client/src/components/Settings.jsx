@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { X, Camera, Mic, Volume2 } from "lucide-react";
-import { listDevices, canChooseSpeaker, loadDevicePrefs, saveDevicePrefs } from "../lib/devices.js";
+import { listDevices, canChooseSpeaker, loadDevicePrefs, saveDevicePrefs } from "../model/devices.js";
 
 /**
  * Settings — switch camera, microphone or speaker mid-call.

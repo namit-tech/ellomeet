@@ -19,6 +19,11 @@ export function validate(schema, handler) {
       return;
     }
 
-    handler({ ...ctx, data: result.data });
+    // Handlers are async now that room state can be a network hop away. An
+    // unhandled rejection here would take the whole process down, so every
+    // failure is contained to the one event that caused it.
+    Promise.resolve(handler({ ...ctx, data: result.data })).catch((err) =>
+      console.error(`[handler] ${ctx.event} from ${ctx.socket.id} threw:`, err)
+    );
   };
 }

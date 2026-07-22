@@ -32,7 +32,7 @@ export default function App() {
           <span className="brand-mark"><Video size={22} /></span>
           <h1>Meet</h1>
         </div>
-        <p className="subtitle">Private, peer-to-peer video calls for small groups.</p>
+        <p className="subtitle">Private group video calls. No sign-up, no downloads.</p>
 
         <label>
           Your name
@@ -63,7 +63,7 @@ export default function App() {
         </div>
       </div>
 
-      <p className="footer-hint">No sign-up · Video never touches a server</p>
+      <p className="footer-hint">No sign-up · No downloads · Up to 20 people</p>
     </div>
   );
 }

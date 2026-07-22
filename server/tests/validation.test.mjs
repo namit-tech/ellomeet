@@ -43,24 +43,20 @@ export default async function run(url) {
   r.check("non-string host target is rejected", wasRejected(mallory, "host:remove"));
   r.check("...and nobody was removed", alice.state.room.participants.length === 2);
 
-  mallory.emit("offer", { to: alice.id, sdp: "not-an-sdp-object" });
-  await wait(250);
-  r.check("malformed SDP envelope is rejected", wasRejected(mallory, "offer"));
-
   mallory.emit("join", { roomId: "" });
   await wait(250);
   r.check("empty roomId is rejected", wasRejected(mallory, "join"));
 
-  // Shape-valid but unauthorised: signaling is limited to your own room, so a
-  // stranger can't push SDP at a participant they were never in a call with.
+  // Shape-valid but unauthorised. Every room event is limited to members of
+  // that room, so a stranger who knows a room id still cannot act inside it.
   const outsider = connect(url);
   await wait(300);
-  outsider.emit("offer", {
-    to: alice.id,
-    sdp: { type: "offer", sdp: "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\n" },
-  });
-  await wait(300);
-  r.check("well-formed SDP from a non-member is dropped", !wasRejected(outsider, "offer"));
+  outsider.emit("chat", { text: "I am not in this room" });
+  await wait(250);
+  r.check(
+    "a well-formed message from a non-member is dropped",
+    !alice.state.chat.some((m) => m.text === "I am not in this room")
+  );
 
   // And none of this may break the legitimate path.
   mallory.emit("state", { audio: false });

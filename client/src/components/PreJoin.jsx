@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Mic, MicOff, Video, VideoOff, Camera, Volume2 } from "lucide-react";
-import { listDevices, canChooseSpeaker, loadDevicePrefs, saveDevicePrefs } from "../lib/devices.js";
+import { listDevices, canChooseSpeaker, loadDevicePrefs, saveDevicePrefs } from "../model/devices.js";
 
 /**
  * PreJoin — the "green room". You see yourself, pick your camera/mic/speaker

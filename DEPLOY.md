@@ -1,8 +1,11 @@
 # Deploying Meet to a VPS — meet.elloindia.in
 
 Target: **Ubuntu/Debian VPS**, deployed via **git clone**, served over **HTTPS**
-by Nginx, with the Node signaling server running under systemd. TURN is handled
-by Metered (no coturn needed).
+by Nginx, with the Node server under systemd and a **LiveKit SFU** in Docker.
+
+Media flows through the SFU, not peer-to-peer — that is what allows 20 people in
+a room. LiveKit brings its own TURN, so there is no separate TURN service to
+configure.
 
 Run everything below as a sudo-capable user on the VPS unless noted.
 
@@ -75,9 +78,17 @@ Set `.env` to:
 ```
 PORT=3001
 CLIENT_ORIGIN=https://meet.elloindia.in
-METERED_DOMAIN=ellomeet.metered.live
-METERED_API_KEY=<your Metered API key>
+MAX_PEERS=20
+
+# Must match deploy/livekit/livekit.yaml exactly — see step 4b.
+LIVEKIT_URL=wss://meet.elloindia.in/livekit
+LIVEKIT_API_KEY=<key>
+LIVEKIT_API_SECRET=<secret>
 ```
+
+Without the three `LIVEKIT_*` values the app still runs, but no audio or video
+can flow. The server logs `[livekit] not configured` and the UI says so rather
+than showing a black tile forever.
 
 Install the systemd service (the unit file is in `deploy/`):
 
@@ -96,6 +107,36 @@ curl localhost:3001/health                 # -> {"ok":true}
 
 > The unit runs as `www-data`. Make sure it can read the files:
 > `sudo chown -R www-data:www-data /var/www/meet/server`
+
+---
+
+## 4b. The SFU — required, or nothing has video
+
+Full runbook in [`deploy/livekit/README.md`](deploy/livekit/README.md). The short
+version:
+
+```bash
+# generate a key pair — these are yours to invent, nobody issues them
+echo "API$(openssl rand -hex 6)"
+openssl rand -base64 36
+```
+
+Put the pair in **both** `deploy/livekit/livekit.yaml` (under `keys:`) and
+`server/.env`. They are a shared secret between the two processes; if they do
+not match, tokens are rejected and no one connects.
+
+```bash
+sudo setfacl -R -m u:1000:rX /etc/letsencrypt/live /etc/letsencrypt/archive
+cd /var/www/meet/deploy/livekit
+docker compose up -d
+curl http://127.0.0.1:7880        # -> OK
+```
+
+> **Optional — scaling out.** Set `REDIS_URL` in `server/.env` and rooms move to
+> Valkey with Socket.IO broadcasts routed through it, so several server
+> instances behave as one. One Valkey serves both this and LiveKit's own
+> multi-node coordination:
+> `docker run -d --name valkey --restart unless-stopped -p 6379:6379 valkey/valkey`
 
 ---
 
@@ -149,12 +190,23 @@ Now open **https://meet.elloindia.in** — camera/mic will work.
 
 ```bash
 sudo ufw allow OpenSSH
-sudo ufw allow 'Nginx Full'    # opens 80 + 443
+sudo ufw allow 'Nginx Full'      # 80 + 443
+
+# LiveKit media. THIS IS THE STEP EVERYONE MISSES.
+sudo ufw allow 7881/tcp          # TCP media fallback
+sudo ufw allow 50000:60000/udp   # RTP media
+sudo ufw allow 3478/udp          # TURN
+sudo ufw allow 5349/tcp          # TURN over TLS
 sudo ufw enable
 ```
 
-The signaling server (3001) stays internal — only Nginx talks to it, so it does
-not need a firewall opening.
+The signalling server (3001) and LiveKit's signalling port (7880) stay internal
+— only Nginx talks to them.
+
+**Why the UDP range matters:** signalling goes over TCP through Nginx and will
+connect happily without it. The call then joins, shows everyone on the roster,
+and carries no audio or video at all. If you see that symptom, this is the
+cause nine times out of ten.
 
 ---
 
@@ -163,8 +215,10 @@ not need a firewall opening.
 1. Open **https://meet.elloindia.in** in two different browsers/devices.
 2. Create a meeting in one, paste the invite link into the other.
 3. You should see two-way video. Try **Effects → Blur** and screen share.
-4. To confirm TURN is actually used on hard networks, test between a laptop on
-   Wi-Fi and a phone on mobile data.
+4. Test between **different networks** — a laptop on Wi-Fi and a phone on mobile
+   data. Two machines on the same LAN will connect even when every firewall rule
+   above is wrong, so a same-network test proves very little.
+5. `docker compose logs -f livekit` should show participants joining.
 
 ---
 
@@ -189,6 +243,9 @@ No Nginx reload needed for client rebuilds — it serves the fresh `dist` files.
 |---|---|
 | Camera blocked | Make sure you're on **https://**, not http. |
 | App loads but no connection between peers | Check `sudo systemctl status meet-signaling` and browser console; verify `CLIENT_ORIGIN` matches the domain exactly. |
-| Calls work on same Wi-Fi but not across networks | TURN issue — confirm `METERED_API_KEY` is set in `server/.env` and the server logs don't show `[ice] Metered fetch failed`. |
+| **Joins fine, roster correct, but no audio or video** | The UDP media range is closed. Re-check step 8 — this is the most common failure by a wide margin. |
+| "Media server not configured" screen | `LIVEKIT_*` missing from `server/.env`. Restart the server after adding them. |
+| Connects locally but not across networks | TURN. Confirm 3478/udp and 5349/tcp are open and that LiveKit can read the Let's Encrypt cert (`setfacl` in step 4b). |
+| Room full at 4 people | `MAX_PEERS` still at its old value — set it to 20 and restart. |
 | 502 Bad Gateway | Signaling server isn't running — `sudo systemctl restart meet-signaling`. |
 | Socket keeps disconnecting | Ensure the `/socket.io/` proxy block (with Upgrade headers) is present in the Nginx config. |

@@ -4,6 +4,7 @@ import {
   Hand, Smile, Users, Settings as SettingsIcon,
 } from "lucide-react";
 import { ReactionPicker } from "./Reactions.jsx";
+import { canShareScreen, screenShareUnavailableReason } from "../model/capabilities.js";
 
 /**
  * Controls — the bottom toolbar.
@@ -59,10 +60,17 @@ export default function Controls({
         <span>{videoOn ? "Stop" : "Start"}</span>
       </button>
 
+      {/* Disabled rather than hidden: a missing button reads as a bug, while a
+          disabled one with a reason explains that no mobile browser implements
+          getDisplayMedia. See model/capabilities.js. */}
       <button
         className={`ctrl ${sharing ? "active" : ""}`}
         onClick={onToggleShare}
-        title={sharing ? "Stop presenting" : "Present your screen"}
+        disabled={!canShareScreen}
+        title={
+          screenShareUnavailableReason() ||
+          (sharing ? "Stop presenting" : "Present your screen")
+        }
       >
         {sharing ? <MonitorX size={22} /> : <MonitorUp size={22} />}
         <span>{sharing ? "Stop share" : "Share"}</span>

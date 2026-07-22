@@ -1,0 +1,54 @@
+# LiveKit SFU configuration.
+#
+# Copy to the VPS as deploy/livekit/livekit.yaml and replace the key/secret
+# before starting. The secret must match LIVEKIT_API_SECRET in the Node
+# server's .env — that shared secret is what makes a token this server mints
+# acceptable to the SFU.
+
+port: 7880
+
+rtc:
+  # The UDP range media actually flows over. These must be open in the VPS
+  # firewall, or calls will connect and then carry no audio or video — the
+  # single most common self-hosting failure.
+  port_range_start: 50000
+  port_range_end: 60000
+  # A single public IP, so no need to probe cloud metadata services.
+  use_external_ip: true
+  # TCP fallback for networks that block UDP outright (corporate, some mobile).
+  tcp_port: 7881
+
+keys:
+  # CHANGE BOTH. Generate with: docker run --rm livekit/livekit-server generate-keys
+  APIchangeme: changeme_secret_at_least_32_characters_long
+
+# LiveKit's built-in TURN. Once this is running and proven, the Metered
+# dependency in ice.service.js can be retired.
+turn:
+  enabled: true
+  domain: meet.elloindia.in
+  tls_port: 5349
+  udp_port: 3478
+  # Reuses the Let's Encrypt certificate Nginx already holds.
+  cert_file: /etc/letsencrypt/live/meet.elloindia.in/fullchain.pem
+  key_file: /etc/letsencrypt/live/meet.elloindia.in/privkey.pem
+
+logging:
+  level: info
+
+# Metrics endpoint scraped by deploy/observability/prometheus.yml. Bound to
+# localhost only — these numbers describe your capacity and should not be
+# public.
+prometheus_port: 6789
+
+# Shared coordination for a multi-node cluster. The SAME Valkey the signalling
+# server uses for REDIS_URL — one instance, two consumers. Leave commented until
+# you actually run a second node; a single node needs none of this.
+# redis:
+#   address: 127.0.0.1:6379
+
+room:
+  # Rooms are created by the token grant, not by clients asking.
+  auto_create: false
+  empty_timeout: 300
+  max_participants: 50

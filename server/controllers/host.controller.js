@@ -1,94 +1,118 @@
-import { admit } from "./room.controller.js";
-
 /**
- * Moderator controls. Every handler runs through `asHost` first — authority is
- * checked on the server, never assumed from the fact that a client rendered
- * the button.
+ * Moderator controls. Every handler re-checks authority against stored state —
+ * never assumed from the fact that a client rendered the button.
+ *
+ * ADMISSION IN A CLUSTER. Letting someone in used to mean grabbing their socket
+ * object and calling admit() on it. That only works while every connection
+ * lives in this process: `io.sockets.sockets.get(id)` sees local sockets and
+ * silently finds nothing for anyone connected to a sibling instance, so a host
+ * on server A could not admit a guest on server B.
+ *
+ * So admission is a two-step handshake instead. The host's instance marks the
+ * guest approved in shared state and emits "admitted" to them; the guest's
+ * client re-sends `join`, which runs on whichever instance actually holds that
+ * connection and can set up its socket properly. Slightly more chatter, and the
+ * only version that works on more than one machine.
  */
-function asHost({ socket, registry }) {
-  const room = registry.get(socket.data.room);
+
+async function asHost({ socket, registry }) {
+  const roomId = socket.data.room;
+  if (!roomId) return null;
+  const room = await registry.get(roomId);
   if (!room || !room.isHost(socket.id)) return null;
   return room;
 }
 
 // We cannot reach into someone's microphone from here. We ask, their client
 // mutes itself, and it reports the new state back to the room.
-export function mute({ socket, data, deps }) {
-  const room = asHost({ socket, registry: deps.registry });
+export async function mute({ socket, data, deps }) {
+  const room = await asHost({ socket, registry: deps.registry });
   if (!room || !room.has(data.id)) return;
 
   deps.broadcast.toPeer(data.id, "force-mute", { by: socket.data.name });
 }
 
-export function remove({ socket, data, deps }) {
-  const { broadcast } = deps;
-  const room = asHost({ socket, registry: deps.registry });
+export async function remove({ socket, data, deps }) {
+  const { registry, broadcast } = deps;
+  const room = await asHost({ socket, registry });
   if (!room || data.id === socket.id) return;
 
-  const { member } = room.removeMember(data.id);
-  if (!member) return;
+  const result = await registry.withRoom(room.id, (r) => {
+    const { member } = r.removeMember(data.id);
+    return member ? { member, snapshot: r.snapshot() } : null;
+  });
+  if (!result) return;
 
   broadcast.toPeer(data.id, "removed", { by: socket.data.name });
-  broadcast.evict(data.id, room.id); // stop their traffic immediately
-  broadcast.toRoom(room, "peer-left", { id: data.id });
-  broadcast.roomState(room);
-  broadcast.system(room, `${member.name} was removed`);
+  await broadcast.evict(data.id, room.id); // stop their traffic immediately
+  broadcast.roomState(room.id, result.snapshot);
+  await broadcast.system(registry, room.id, `${result.member.name} was removed`);
 }
 
-export function lock({ socket, data, deps }) {
-  const { broadcast } = deps;
-  const room = asHost({ socket, registry: deps.registry });
+export async function lock({ socket, data, deps }) {
+  const { registry, broadcast } = deps;
+  const room = await asHost({ socket, registry });
   if (!room) return;
 
-  room.setLocked(data.locked);
+  const result = await registry.withRoom(room.id, (r) => {
+    r.setLocked(data.locked);
 
-  // Unlocking lets everyone currently knocking straight in — leaving them
-  // stuck in a lobby that no longer exists would be a trap.
-  if (!room.locked) {
-    for (const [id, entry] of room.drainWaiting()) {
-      const waitingSocket = broadcast.socketFor(id);
-      if (waitingSocket) {
-        admit({ socket: waitingSocket, room, name: entry.name, media: entry.media, deps });
-      }
-    }
-  }
+    // Unlocking lets everyone currently knocking straight in — leaving them
+    // stuck in a lobby that no longer exists would be a trap.
+    const freed = r.locked ? [] : r.drainWaiting().map(([id]) => id);
+    for (const id of freed) r.approve(id);
 
-  broadcast.roomState(room);
-  broadcast.system(room, room.locked ? "Meeting locked" : "Meeting unlocked");
+    return { locked: r.locked, freed, snapshot: r.snapshot() };
+  });
+
+  for (const id of result.freed) broadcast.toPeer(id, "admitted", {});
+
+  broadcast.roomState(room.id, result.snapshot);
+  await broadcast.system(registry, room.id, result.locked ? "Meeting locked" : "Meeting unlocked");
 }
 
-export function admitOne({ socket, data, deps }) {
-  const { broadcast } = deps;
-  const room = asHost({ socket, registry: deps.registry });
+export async function admitOne({ socket, data, deps }) {
+  const { registry, broadcast } = deps;
+  const room = await asHost({ socket, registry });
   if (!room) return;
 
-  const entry = room.takeWaiting(data.id);
-  const waitingSocket = broadcast.socketFor(data.id);
-  if (!entry || !waitingSocket) return;
+  const result = await registry.withRoom(room.id, (r) => {
+    const entry = r.takeWaiting(data.id);
+    if (!entry) return null;
+    r.approve(data.id);
+    return { snapshot: r.snapshot() };
+  });
+  if (!result) return;
 
-  admit({ socket: waitingSocket, room, name: entry.name, media: entry.media, deps });
+  broadcast.toPeer(data.id, "admitted", {});
+  broadcast.roomState(room.id, result.snapshot);
 }
 
-export function deny({ socket, data, deps }) {
-  const { broadcast } = deps;
-  const room = asHost({ socket, registry: deps.registry });
-  if (!room || !room.takeWaiting(data.id)) return;
+export async function deny({ socket, data, deps }) {
+  const { registry, broadcast } = deps;
+  const room = await asHost({ socket, registry });
+  if (!room) return;
+
+  const snapshot = await registry.withRoom(room.id, (r) =>
+    r.takeWaiting(data.id) ? r.snapshot() : null
+  );
+  if (!snapshot) return;
 
   broadcast.toPeer(data.id, "denied");
-  broadcast.roomState(room);
+  broadcast.roomState(room.id, snapshot);
 }
 
-export function end({ socket, deps }) {
+export async function end({ socket, deps }) {
   const { registry, broadcast } = deps;
-  const room = asHost({ socket, registry });
+  const room = await asHost({ socket, registry });
   if (!room) return;
 
-  broadcast.toRoom(room, "meeting-ended", { by: socket.data.name });
-  // People still in the lobby are waiting for a meeting that no longer exists.
-  for (const [id] of room.drainWaiting()) {
-    broadcast.toPeer(id, "meeting-ended", {});
-  }
+  const waiting = await registry.withRoom(room.id, (r) => r.drainWaiting().map(([id]) => id));
 
-  registry.delete(room.id);
+  broadcast.toRoom(room.id, "meeting-ended", { by: socket.data.name });
+  // People still in the lobby are waiting for a meeting that no longer exists.
+  for (const id of waiting) broadcast.toPeer(id, "meeting-ended", {});
+
+  await registry.delete(room.id);
   console.log(`[end] ${room.id} ended by host`);
 }

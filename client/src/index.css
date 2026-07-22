@@ -233,16 +233,59 @@ label {
 
 /* ---------- Video grid / spotlight ---------- */
 
-.stage { flex: 1; min-height: 0; min-width: 0; }
+.stage { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 
 .grid {
+  flex: 1;
+  min-height: 0;
   display: grid;
   gap: 14px;
   padding: 18px;
 }
 .grid-1 { grid-template-columns: 1fr; }
 .grid-2 { grid-template-columns: 1fr 1fr; }
-.grid-3, .grid-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.grid-3, .grid-4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); }
+.grid-5, .grid-6 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); }
+.grid-7, .grid-8, .grid-9 {
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+}
+
+/* Phones can't read a 3x3 of faces — drop to two columns and let it scroll. */
+@media (max-width: 640px) {
+  .grid-3, .grid-4, .grid-5, .grid-6, .grid-7, .grid-8, .grid-9 {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: none;
+    grid-auto-rows: minmax(120px, 1fr);
+    overflow-y: auto;
+  }
+}
+
+/* Paging between tiles that don't fit. Only rendered when there is more than
+   one page — an unrendered tile is also an unsubscribed one, which is where the
+   bandwidth saving comes from. */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 6px 0 12px;
+  flex-shrink: 0;
+}
+.pager-btn {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.pager-btn:hover:not(:disabled) { border-color: var(--primary); }
+.pager-btn:disabled { opacity: .4; cursor: default; }
+.pager-label { font-size: 12px; color: var(--muted); min-width: 42px; text-align: center; }
 
 /* Someone is presenting or pinned: one big tile, everyone else in a filmstrip. */
 .spotlight {
@@ -256,6 +299,8 @@ label {
 /* A shared screen must never be cropped — show the whole thing. */
 .stage-main .tile.pinned video { object-fit: contain; background: #000; }
 
+.filmstrip-wrap { flex-shrink: 0; }
+.filmstrip-wrap .pager { padding: 6px 0 0; }
 .filmstrip {
   display: flex;
   gap: 12px;
@@ -276,6 +321,18 @@ label {
 }
 .tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .tile video.mirrored { transform: scaleX(-1); }
+/* A shared screen is never cropped, at any size — cropping hides content. */
+.tile.screen video { object-fit: contain; background: #000; }
+
+/* Fullscreen: the tile becomes the display, so drop the card styling and never
+   crop — at this size cropping is the whole point of going fullscreen. */
+.tile:fullscreen, .tile:-webkit-full-screen {
+  border: none;
+  border-radius: 0;
+  background: #000;
+  box-shadow: none;
+}
+.tile:fullscreen video, .tile:-webkit-full-screen video { object-fit: contain; }
 
 .tile-placeholder { position: absolute; inset: 0; display: grid; place-items: center; }
 .tile-avatar {
@@ -367,10 +424,16 @@ label {
   50% { transform: rotate(8deg); }
 }
 
-.tile-pin {
+.tile-actions {
   position: absolute;
   top: 10px;
   right: 10px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.tile-action {
   width: 30px;
   height: 30px;
   display: grid;
@@ -380,12 +443,22 @@ label {
   background: rgba(0, 0, 0, .55);
   color: #fff;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity .15s;
   backdrop-filter: blur(6px);
 }
-.tile:hover .tile-pin, .tile.pinned .tile-pin { opacity: 1; }
-.tile-pin:hover { background: var(--primary); }
+.tile-action:hover { background: var(--primary); }
+.tile-action.on { background: var(--primary); }
+/* A pinned tile keeps its controls visible — the pin state must be legible
+   without hovering, or you cannot tell why the spotlight is stuck. */
+.tile:hover .tile-actions, .tile.pinned .tile-actions { opacity: 1; }
+/* Touch devices have no hover, so the controls would be unreachable. */
+@media (hover: none) {
+  .tile-actions { opacity: 1; }
+}
+
+/* A tile is clickable: clicking chooses what fills the stage. */
+.tile { cursor: pointer; }
+.tile.selected { border-color: color-mix(in srgb, var(--primary) 60%, transparent); }
+.stage-main .tile.selected { border-color: var(--border); }
 
 /* ============================================================
    Controls (bottom bar)
@@ -423,6 +496,8 @@ label {
 .ctrl.active span { color: var(--primary); }
 .ctrl.leave { background: var(--danger); border-color: var(--danger); color: #fff; }
 .ctrl.leave span { color: #fff; }
+.ctrl:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+.ctrl:disabled:active { transform: none; }
 
 /* ============================================================
    Side panels (chat + background)
@@ -874,3 +949,8 @@ kbd {
   .prejoin { flex-direction: column; gap: 20px; padding: 20px; }
   .room-timer, .room-code { display: none; }
 }
+
+/* Shown only while the lazily-loaded call screen is fetched. Deliberately blank
+   rather than a spinner: on a warm cache it appears for a frame or two, and a
+   flashed spinner reads as jank. */
+.route-loading { min-height: 100vh; background: var(--bg); }

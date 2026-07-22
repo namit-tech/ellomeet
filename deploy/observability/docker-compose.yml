@@ -1,0 +1,37 @@
+# Metrics for the SFU and the signalling servers.
+#
+# Stand this up BEFORE running more than one LiveKit node. Twenty nodes without
+# dashboards is unoperable — when a call degrades you need to know whether it
+# was CPU, bandwidth, or one bad participant, and none of that is visible from
+# `docker ps`.
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    network_mode: host # so it can scrape 127.0.0.1 services
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      # Grafana listens on 3000 by default, which collides with plenty. Move it.
+      GF_SERVER_HTTP_PORT: "3010"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:-changeme}"
+      # Never expose this straight to the internet — put it behind the same
+      # Nginx and require auth.
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  prometheus-data:
+  grafana-data:

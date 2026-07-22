@@ -4,11 +4,29 @@
  *
  * Deliberately free of Socket.IO: no `io`, no `socket`, no emit. It takes ids
  * and returns facts, which is what makes the rules that actually bite (host
- * transfer on disconnect, the mesh capacity cap, admitting someone into a room
- * that just emptied) testable without standing up a server.
+ * transfer on disconnect, the capacity cap, admitting someone into a room that
+ * just emptied) testable without standing up a server.
+ *
+ * It is also free of storage. A Room is built from a plain state object and can
+ * serialise back to one (`fromState` / `toState`), so the same rules run
+ * whether that state lives in this process's memory or in Valkey shared by a
+ * dozen instances. All mutation goes through `store.withRoom`, which loads,
+ * applies, and persists as one step — see services/store/.
  */
 
-export const DEFAULT_MAX_PEERS = Number(process.env.MAX_PEERS || 4);
+/**
+ * Room capacity.
+ *
+ * 20 is safe now only because media goes through the SFU. It was 4 while
+ * clients meshed, because a mesh has every participant send to every other one
+ * — at 20 that is 19 outbound streams each, roughly 23 Mbps upload and 19
+ * encoders per person. The cap was the thing standing between users and a call
+ * that connects and then falls over.
+ *
+ * Going much past 20 is a per-room UI and downlink question rather than a
+ * server one; see PLAN.md §3.
+ */
+export const DEFAULT_MAX_PEERS = Number(process.env.MAX_PEERS || 20);
 const CHAT_HISTORY = 200;
 
 export class Room {
@@ -19,7 +37,43 @@ export class Room {
     this.locked = false;
     this.members = new Map(); // id -> { name, audio, video, sharing, hand }
     this.waiting = new Map(); // id -> { name, media }  (knocking)
+    // Approved by the host but not yet re-joined. Admission is a handshake in a
+    // cluster (see host.controller.js), so there is a moment where someone is
+    // allowed in but has not come back yet. Without this they would knock again
+    // and wait forever.
+    this.approved = new Set();
     this.chat = [];
+  }
+
+  /**
+   * Rehydrate from storage.
+   *
+   * Members and waiting are stored as entry ARRAYS, not objects: Map preserves
+   * insertion order and the host-transfer rule depends on it ("whoever has been
+   * here longest"). A plain object would not survive a round trip with that
+   * order guaranteed for all key shapes.
+   */
+  static fromState(id, state, maxPeers = DEFAULT_MAX_PEERS) {
+    const room = new Room(id, maxPeers);
+    if (!state) return room;
+    room.hostId = state.hostId ?? null;
+    room.locked = !!state.locked;
+    room.members = new Map(state.members || []);
+    room.waiting = new Map(state.waiting || []);
+    room.approved = new Set(state.approved || []);
+    room.chat = state.chat || [];
+    return room;
+  }
+
+  toState() {
+    return {
+      hostId: this.hostId,
+      locked: this.locked,
+      members: [...this.members.entries()],
+      waiting: [...this.waiting.entries()],
+      approved: [...this.approved],
+      chat: this.chat,
+    };
   }
 
   get size() {
@@ -44,20 +98,21 @@ export class Room {
 
   // An empty room can't be locked against its own first arrival — otherwise a
   // locked meeting whose host dropped out could never be entered by anyone.
-  requiresApproval() {
+  requiresApproval(id) {
+    // Someone the host already waved through skips the lobby on their way back.
+    if (id && this.approved.has(id)) return false;
     return this.locked && this.members.size > 0;
   }
 
-  // Whoever is already here. Must be read BEFORE addMember, because the
-  // newcomer is the one that sends the offers (the anti-glare rule).
-  peerList() {
-    return [...this.members.entries()].map(([id, m]) => ({ id, name: m.name }));
+  approve(id) {
+    this.approved.add(id);
   }
 
   addMember(id, name, media = {}) {
     if (this.isFull) return false;
 
     this.waiting.delete(id);
+    this.approved.delete(id);
 
     // First one in owns the room; also re-elect if the recorded host is gone.
     if (!this.hostId || !this.members.has(this.hostId)) this.hostId = id;
@@ -80,6 +135,7 @@ export class Room {
     const member = this.members.get(id) || null;
     this.members.delete(id);
     this.waiting.delete(id);
+    this.approved.delete(id);
 
     let newHostId = null;
     if (this.hostId === id && !this.isEmpty) {
@@ -157,22 +213,32 @@ export class Room {
   }
 }
 
+/**
+ * The registry is a thin facade over whichever store is configured.
+ *
+ * Everything is async because the state may be a network hop away. The shape
+ * that matters is `withRoom`: load, mutate, persist — one indivisible step. Any
+ * code path that reads a room, decides something, and then writes MUST do it
+ * inside a single `withRoom` callback, or two instances can interleave and
+ * produce the bugs this whole layer exists to prevent (a 21st participant, two
+ * hosts).
+ */
 export class RoomRegistry {
-  constructor(maxPeers = DEFAULT_MAX_PEERS) {
-    this.maxPeers = maxPeers;
-    this.rooms = new Map();
+  constructor(store) {
+    this.store = store;
   }
 
+  /** Mutating access. `fn` must be synchronous — see the stores. */
+  withRoom(id, fn) {
+    return this.store.withRoom(id, fn);
+  }
+
+  /** Read-only. Null when the room does not exist. */
   get(id) {
-    return this.rooms.get(id) || null;
-  }
-
-  ensure(id) {
-    if (!this.rooms.has(id)) this.rooms.set(id, new Room(id, this.maxPeers));
-    return this.rooms.get(id);
+    return this.store.readRoom(id);
   }
 
   delete(id) {
-    this.rooms.delete(id);
+    return this.store.deleteRoom(id);
   }
 }

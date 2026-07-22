@@ -3,33 +3,39 @@
  *
  * Controllers describe *what* should be published; this decides how it reaches
  * the wire. Keeping it in one place is what lets room.service.js stay pure.
+ *
+ * CLUSTER SAFETY. With the Redis adapter, `io.to(...).emit(...)` reaches
+ * clients on every instance — but the socket *objects* only exist on the
+ * instance holding that connection. So anything that manipulates a specific
+ * socket (making it leave a room, disconnecting it) has to go through the
+ * adapter's cluster-wide helpers rather than `io.sockets.sockets.get(id)`,
+ * which sees local connections only and silently no-ops for everyone else.
  */
 export function createBroadcaster(io) {
   return {
-    // Everyone re-renders from this snapshot — see Room#snapshot.
-    roomState(room) {
-      io.to(room.id).emit("room-state", room.snapshot());
+    // Everyone re-renders from this snapshot — see Room#snapshot. Takes the
+    // snapshot rather than the room, because the caller produced it inside the
+    // same transaction that made the change.
+    roomState(roomId, snapshot) {
+      io.to(roomId).emit("room-state", snapshot);
     },
 
     // Joins, leaves, locks: recorded in the chat history so a late joiner sees
     // the context, not just an empty transcript.
-    system(room, text) {
-      const message = room.addChat({
-        id: "system",
-        name: "",
-        text,
-        ts: Date.now(),
-        system: true,
-      });
-      io.to(room.id).emit("chat", message);
+    async system(registry, roomId, text) {
+      const message = await registry.withRoom(roomId, (room) =>
+        room.addChat({ id: "system", name: "", text, ts: Date.now(), system: true })
+      );
+      io.to(roomId).emit("chat", message);
     },
 
-    chat(room, message) {
-      io.to(room.id).emit("chat", room.addChat(message));
+    async chat(registry, roomId, message) {
+      const stored = await registry.withRoom(roomId, (room) => room.addChat(message));
+      io.to(roomId).emit("chat", stored);
     },
 
-    toRoom(room, event, payload) {
-      io.to(room.id).emit(event, payload);
+    toRoom(roomId, event, payload) {
+      io.to(roomId).emit(event, payload);
     },
 
     toPeer(id, event, payload) {
@@ -38,15 +44,9 @@ export function createBroadcaster(io) {
 
     // Force a socket out of the room's broadcast group (used when the host
     // removes someone — they must stop receiving room traffic immediately).
-    evict(id, roomId) {
-      const socket = io.sockets.sockets.get(id);
-      if (!socket) return;
-      socket.leave(roomId);
-      socket.data.room = null;
-    },
-
-    socketFor(id) {
-      return io.sockets.sockets.get(id) || null;
+    // socketsLeave works across the cluster; socket.leave() would not.
+    async evict(id, roomId) {
+      await io.in(id).socketsLeave(roomId);
     },
   };
 }

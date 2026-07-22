@@ -1,0 +1,26 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # LiveKit exposes Prometheus metrics natively once `prometheus_port` is set in
+  # livekit.yaml. The numbers that matter when a call goes bad:
+  #
+  #   livekit_participant_total          how many people are actually connected
+  #   livekit_room_total                 concurrent rooms — the 500 in the target
+  #   livekit_node_cpu_load              THE capacity signal; when this pins,
+  #                                      you need another node, not more tuning
+  #   livekit_forward_latency            forwarding delay through the SFU
+  #   livekit_packet_loss / nack_total   is the network hurting, or the box
+  - job_name: livekit
+    static_configs:
+      - targets: ["127.0.0.1:6789"]
+
+  # Add one entry per LiveKit node as the cluster grows.
+  # - job_name: livekit-nodes
+  #   static_configs:
+  #     - targets: ["10.0.0.11:6789", "10.0.0.12:6789"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["127.0.0.1:9090"]

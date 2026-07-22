@@ -49,25 +49,7 @@ export const ReactionSchema = z.object({
 // envelope (who it's for, roughly what shape) and let the browser parse the
 // contents — re-implementing an SDP parser here would be its own bug farm.
 
-export const OfferSchema = z.object({
-  to: SocketId,
-  sdp: z.object({
-    type: z.enum(["offer", "pranswer", "answer", "rollback"]),
-    sdp: z.string().max(100_000),
-  }),
-});
 
-export const AnswerSchema = OfferSchema;
-
-export const IceCandidateSchema = z.object({
-  to: SocketId,
-  candidate: z.object({
-    candidate: z.string().max(2000),
-    sdpMid: z.string().max(64).nullable().optional(),
-    sdpMLineIndex: z.number().int().min(0).max(64).nullable().optional(),
-    usernameFragment: z.string().max(256).nullable().optional(),
-  }),
-});
 
 // --- Host actions ----------------------------------------------------------
 

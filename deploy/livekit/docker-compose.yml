@@ -1,0 +1,15 @@
+# LiveKit SFU — runs alongside the existing Node signalling server on the VPS.
+#
+# network_mode: host is not laziness. LiveKit allocates a large UDP port range
+# for media, and Docker's userland proxy would add a hop to every RTP packet
+# and mangle the source addresses ICE depends on. Host networking is the
+# documented production setup.
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: livekit
+    restart: unless-stopped
+    network_mode: host
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro

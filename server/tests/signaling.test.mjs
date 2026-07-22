@@ -23,8 +23,17 @@ export default async function run(url) {
   r.check("first joiner is host", alice.state.room?.hostId === alice.id);
   r.check("late joiner sees the same host", bob.state.room?.hostId === alice.id);
   r.check("join-time mute state is published", self(bob)?.audio === false);
-  r.check("existing member is told to expect an offer", eventsOf(alice, "peer-joined").length === 1);
-  r.check("newcomer is handed the peer list", eventsOf(bob, "joined")[0]?.payload.peers.length === 1);
+  // The roster snapshot is now the only join notification — mesh needed a
+  // separate peer-joined nudge so the newcomer knew who to offer to; the SFU
+  // does not.
+  r.check(
+    "existing member sees the newcomer on the roster",
+    alice.state.room?.participants.some((p) => p.id === bob.id)
+  );
+  r.check(
+    "newcomer is handed the room cap",
+    eventsOf(bob, "joined")[0]?.payload.maxPeers > 0
+  );
 
   // --- presence state propagates -------------------------------------------
   const bobSeenByAlice = () => alice.state.room.participants.find((p) => p.id === bob.id);
@@ -105,8 +114,8 @@ export default async function run(url) {
   r.check("host can remove someone", eventsOf(eve, "removed").length === 1);
   r.check("removed person leaves the roster", !alice.state.room.participants.some((p) => p.id === eve.id));
   r.check(
-    "others tear down the peer connection",
-    eventsOf(bob, "peer-left").some((e) => e.payload.id === eve.id)
+    "removed person disappears from everyone's roster",
+    !bob.state.room?.participants.some((p) => p.id === eve.id)
   );
 
   // --- the host leaving must not orphan the room ----------------------------

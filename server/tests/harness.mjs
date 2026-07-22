@@ -34,9 +34,24 @@ export function connect(url) {
   for (const event of [
     "joined", "waiting", "denied", "removed", "meeting-ended",
     "room-full", "force-mute", "peer-joined", "peer-left", "reaction",
+    "admitted", "livekit",
   ]) {
     socket.on(event, (payload) => socket.state.events.push({ event, payload }));
   }
+
+  // Admission is a handshake: the host marks you approved and the server tells
+  // you to come back, because in a cluster your socket may live on a different
+  // instance than the host's. Every real client does this, so the harness does
+  // too — otherwise tests would be asserting against a client that doesn't
+  // exist.
+  const rawEmit = socket.emit.bind(socket);
+  socket.emit = (event, ...args) => {
+    if (event === "join") socket.state.lastJoin = args[0];
+    return rawEmit(event, ...args);
+  };
+  socket.on("admitted", () => {
+    if (socket.state.lastJoin) rawEmit("join", socket.state.lastJoin);
+  });
 
   return socket;
 }

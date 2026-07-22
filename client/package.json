@@ -9,22 +9,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@mantine/core": "^8.3.18",
-    "@mantine/hooks": "^8.3.18",
-    "@mantine/notifications": "^8.3.18",
     "@mediapipe/selfie_segmentation": "^0.1.1675465747",
+    "livekit-client": "^2.20.2",
     "lucide-react": "^1.24.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.0",
-    "socket.io-client": "^4.7.5",
-    "zod": "^4.4.3"
+    "socket.io-client": "^4.7.5"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
     "postcss": "^8.5.17",
-    "postcss-preset-mantine": "^1.18.0",
-    "postcss-simple-vars": "^7.0.1",
     "vite": "^5.4.0",
     "vite-plugin-static-copy": "^3.4.0"
   }

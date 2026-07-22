@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Ban, Sparkles, ImagePlus, X, Check } from "lucide-react";
-import { getPresets, getPresetImage, loadImageFromFile } from "../lib/backgrounds.js";
+import { getPresets, getPresetImage, loadImageFromFile } from "../model/backgrounds.js";
 
 // Panel to choose a virtual background: none, blur, presets, or an upload.
 export default function BackgroundPanel({ onSelect, onClose, disabled, active }) {
