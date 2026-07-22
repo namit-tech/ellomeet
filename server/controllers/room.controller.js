@@ -41,8 +41,11 @@ export async function admit({ socket, roomId, name, media, deps }) {
   // The media credential, issued here and only here. Someone left knocking in
   // the waiting room never reaches this line, so they never get a token — the
   // lobby is enforced by the SFU refusing them, not by the client behaving.
+  // The LiveKit room itself doesn't exist until we create it (auto_create is
+  // off), so that has to happen before a token for it is worth anything.
   livekit
-    ?.issueToken(roomId, socket.id, name)
+    ?.ensureRoom(roomId)
+    .then(() => livekit.issueToken(roomId, socket.id, name))
     .then((creds) => creds && socket.emit("livekit", creds));
 
   broadcast.roomState(roomId, outcome.snapshot);

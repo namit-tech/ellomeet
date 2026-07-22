@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./server/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:8091:3001"
     security_opt:

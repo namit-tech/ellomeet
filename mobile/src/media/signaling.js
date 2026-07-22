@@ -9,7 +9,7 @@ import { io } from 'socket.io-client';
  * trips everyone up: `localhost` on a phone means the phone. For a dev server
  * on your machine use the LAN IP, or `adb reverse tcp:3001 tcp:3001`.
  */
-export const SIGNALING_URL = 'https://meet.elloindia.in';
+export const SIGNALING_URL = 'https://meetapi.elloindia.in';
 
 export const socket = io(SIGNALING_URL, {
   autoConnect: false,
