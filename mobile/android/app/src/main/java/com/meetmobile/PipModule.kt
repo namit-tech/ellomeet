@@ -42,13 +42,16 @@ class PipModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun setActive(value: Boolean) {
         active = value
-        // Android 12+ can enter PiP seamlessly on home-press without us calling
-        // enterPictureInPictureMode by hand — but only if the params are set
-        // with autoEnter while we are still in the foreground. Refresh them now.
+        // Deliberately NOT autoEnter. With autoEnter the system sometimes enters
+        // PiP on home-press WITHOUT calling onUserLeaveHint, so our "collapse the
+        // UI first" step is skipped and the window captures the full, cluttered
+        // layout — clean one press, cluttered the next. Routing every entry
+        // through onUserLeaveHint (see MainActivity) makes the collapse
+        // deterministic. We still set the aspect ratio here.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             reactContext.currentActivity?.let { act ->
                 try {
-                    act.setPictureInPictureParams(buildParams(true))
+                    act.setPictureInPictureParams(buildParams())
                 } catch (_: Throwable) {
                     // Some OEM builds throw if called at an odd moment; harmless.
                 }
@@ -62,7 +65,7 @@ class PipModule(private val reactContext: ReactApplicationContext) :
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         reactContext.currentActivity?.let { act ->
             try {
-                act.enterPictureInPictureMode(buildParams(false))
+                act.enterPictureInPictureMode(buildParams())
             } catch (_: Throwable) {
             }
         }
@@ -77,11 +80,13 @@ class PipModule(private val reactContext: ReactApplicationContext) :
     fun removeListeners(count: Int) {
     }
 
-    private fun buildParams(autoEnter: Boolean): PictureInPictureParams {
+    private fun buildParams(): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder()
             .setAspectRatio(Rational(9, 16)) // portrait call tile
+        // No autoEnter — see setActive. seamlessResize keeps the live surface
+        // (so the minimal view we render still shows) rather than freezing a
+        // snapshot.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            builder.setAutoEnterEnabled(autoEnter)
             builder.setSeamlessResizeEnabled(true)
         }
         return builder.build()
