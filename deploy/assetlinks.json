@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.meetmobile",
+      "sha256_cert_fingerprints": [
+        "EA:F2:51:C4:8A:FD:FD:34:53:16:82:12:91:D5:3A:CB:2C:50:40:44:70:CE:56:BC:66:0F:68:A9:E3:AB:32:71"
+      ]
+    }
+  }
+]

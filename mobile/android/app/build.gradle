@@ -168,4 +168,10 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // On-device selfie segmentation for virtual backgrounds. Bundled rather
+    // than downloaded via Play Services so the effect works on first launch
+    // and offline — it is only a couple of MB and it removes a whole class of
+    // "why is this not working on that phone" support tickets.
+    implementation("com.google.mlkit:segmentation-selfie:16.0.0-beta6")
 }

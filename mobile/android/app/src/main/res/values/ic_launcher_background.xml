@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- White plate behind the Ello wordmark; the mark's own orange carries the
+         colour, so a neutral background keeps it legible on any home screen. -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>

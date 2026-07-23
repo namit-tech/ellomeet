@@ -1,0 +1,9 @@
+<!-- Simple SVG icon for the app -->
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="32" cy="32" r="30" fill="#667eea" stroke="#764ba2" stroke-width="2"/>
+  <circle cx="24" cy="28" r="4" fill="white"/>
+  <circle cx="40" cy="28" r="4" fill="white"/>
+  <circle cx="24" cy="28" r="2" fill="#333"/>
+  <circle cx="40" cy="28" r="2" fill="#333"/>
+  <path d="M20 40 Q32 50 44 40" stroke="white" stroke-width="3" fill="none" stroke-linecap="round"/>
+</svg>

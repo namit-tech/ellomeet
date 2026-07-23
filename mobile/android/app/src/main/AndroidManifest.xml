@@ -16,6 +16,13 @@
          react-native-webrtc; these are the grants that let it run. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- Presenting means leaving the app to show other apps, which puts us in
+         the background. From Android 14 a background app loses the microphone
+         and camera unless a foreground service of the matching type is
+         running, so without these the call goes silent the moment the
+         presenter switches away — the exact thing screen sharing is for. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <!-- Android 13+ requires this before the service's mandatory ongoing
          notification can be shown. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -38,10 +45,26 @@
         android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
         android:launchMode="singleTask"
         android:windowSoftInputMode="adjustResize"
+        android:supportsPictureInPicture="true"
+        android:resizeableActivity="true"
         android:exported="true">
         <intent-filter>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+
+        <!-- App Links. autoVerify makes Android check
+             https://meet.elloindia.in/.well-known/assetlinks.json against this
+             app's signing certificate; once it matches, a /room/<id> link opens
+             straight in the app with no "open with?" chooser. If the app is not
+             installed the same link just opens in the browser, so one link
+             works for everyone. Verification only succeeds for the RELEASE
+             signature, which is why debug builds still show the chooser. -->
+        <intent-filter android:autoVerify="true">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="meet.elloindia.in" android:pathPrefix="/room/" />
         </intent-filter>
       </activity>
     </application>

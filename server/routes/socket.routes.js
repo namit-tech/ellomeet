@@ -25,6 +25,8 @@ const routes = [
   { event: "host:admit", schema: HostTargetSchema, handler: host.admitOne },
   { event: "host:deny", schema: HostTargetSchema, handler: host.deny },
   { event: "host:lock", schema: HostLockSchema, handler: host.lock },
+  { event: "host:promote", schema: HostTargetSchema, handler: host.promote },
+  { event: "host:demote", schema: HostTargetSchema, handler: host.demote },
 ];
 
 export function registerSocketRoutes(io, deps) {

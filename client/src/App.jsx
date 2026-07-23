@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Video, Plus, Sun, Moon, ArrowRight } from "lucide-react";
+import { Plus, Sun, Moon, ArrowRight } from "lucide-react";
 import { useTheme } from "./hooks/useTheme.js";
 
 // Landing page: pick a name and create or join a room.
@@ -29,8 +29,8 @@ export default function App() {
 
       <div className="landing-card">
         <div className="brand">
-          <span className="brand-mark"><Video size={22} /></span>
-          <h1>Meet</h1>
+          <img src="/logo.png" alt="Ello" className="brand-logo" />
+          <h1>Ello Meet</h1>
         </div>
         <p className="subtitle">Private group video calls. No sign-up, no downloads.</p>
 

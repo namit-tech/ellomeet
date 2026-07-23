@@ -365,7 +365,10 @@ export function useLiveKit({ roomId, name, initial }) {
   const sendChat = useCallback((text) => socket.emit("chat", { text }), []);
   const sendReaction = useCallback((emoji) => socket.emit("reaction", { emoji }), []);
 
+  const self = room.participants.find((p) => p.id === selfId);
   const isHost = !!selfId && room.hostId === selfId;
+  const isCoHost = !!self?.isCoHost;
+  const isModerator = isHost || isCoHost;
 
   return {
     selfId,
@@ -382,6 +385,8 @@ export function useLiveKit({ roomId, name, initial }) {
     status,
     notice,
     bgReady,
+    isCoHost,
+    isModerator,
     audioOn,
     videoOn,
     handRaised,
@@ -401,6 +406,8 @@ export function useLiveKit({ roomId, name, initial }) {
       setLocked: (locked) => socket.emit("host:lock", { locked }),
       admit: (id) => socket.emit("host:admit", { id }),
       deny: (id) => socket.emit("host:deny", { id }),
+      promote: (id) => socket.emit("host:promote", { id }),
+      demote: (id) => socket.emit("host:demote", { id }),
       end: () => socket.emit("host:end"),
     },
   };

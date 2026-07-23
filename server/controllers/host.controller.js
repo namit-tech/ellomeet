@@ -15,6 +15,8 @@
  * only version that works on more than one machine.
  */
 
+// Strictly the room owner. Gates the powers that reshape the room: promoting
+// and demoting co-hosts, ending the meeting for everyone.
 async function asHost({ socket, registry }) {
   const roomId = socket.data.room;
   if (!roomId) return null;
@@ -23,19 +25,31 @@ async function asHost({ socket, registry }) {
   return room;
 }
 
+// Host or co-host. Gates day-to-day moderation: admitting from the lobby,
+// muting, removing, locking.
+async function asModerator({ socket, registry }) {
+  const roomId = socket.data.room;
+  if (!roomId) return null;
+  const room = await registry.get(roomId);
+  if (!room || !room.isModerator(socket.id)) return null;
+  return room;
+}
+
 // We cannot reach into someone's microphone from here. We ask, their client
 // mutes itself, and it reports the new state back to the room.
 export async function mute({ socket, data, deps }) {
-  const room = await asHost({ socket, registry: deps.registry });
-  if (!room || !room.has(data.id)) return;
+  const room = await asModerator({ socket, registry: deps.registry });
+  // A co-host cannot mute the host.
+  if (!room || !room.has(data.id) || room.isHost(data.id)) return;
 
   deps.broadcast.toPeer(data.id, "force-mute", { by: socket.data.name });
 }
 
 export async function remove({ socket, data, deps }) {
   const { registry, broadcast } = deps;
-  const room = await asHost({ socket, registry });
-  if (!room || data.id === socket.id) return;
+  const room = await asModerator({ socket, registry });
+  // Never remove yourself, and a co-host can't remove the host.
+  if (!room || data.id === socket.id || room.isHost(data.id)) return;
 
   const result = await registry.withRoom(room.id, (r) => {
     const { member } = r.removeMember(data.id);
@@ -51,7 +65,7 @@ export async function remove({ socket, data, deps }) {
 
 export async function lock({ socket, data, deps }) {
   const { registry, broadcast } = deps;
-  const room = await asHost({ socket, registry });
+  const room = await asModerator({ socket, registry });
   if (!room) return;
 
   const result = await registry.withRoom(room.id, (r) => {
@@ -73,7 +87,7 @@ export async function lock({ socket, data, deps }) {
 
 export async function admitOne({ socket, data, deps }) {
   const { registry, broadcast } = deps;
-  const room = await asHost({ socket, registry });
+  const room = await asModerator({ socket, registry });
   if (!room) return;
 
   const result = await registry.withRoom(room.id, (r) => {
@@ -90,7 +104,7 @@ export async function admitOne({ socket, data, deps }) {
 
 export async function deny({ socket, data, deps }) {
   const { registry, broadcast } = deps;
-  const room = await asHost({ socket, registry });
+  const room = await asModerator({ socket, registry });
   if (!room) return;
 
   const snapshot = await registry.withRoom(room.id, (r) =>
@@ -99,6 +113,37 @@ export async function deny({ socket, data, deps }) {
   if (!snapshot) return;
 
   broadcast.toPeer(data.id, "denied");
+  broadcast.roomState(room.id, snapshot);
+}
+
+// Promote a member to co-host, or demote them. Host only — a co-host cannot
+// create more co-hosts, which is what keeps the owner in ultimate control.
+export async function promote({ socket, data, deps }) {
+  const { registry, broadcast } = deps;
+  const room = await asHost({ socket, registry });
+  if (!room || !room.has(data.id) || data.id === socket.id) return;
+
+  const snapshot = await registry.withRoom(room.id, (r) => {
+    r.promote(data.id);
+    return r.snapshot();
+  });
+
+  broadcast.toPeer(data.id, "role-changed", { coHost: true, by: socket.data.name });
+  broadcast.roomState(room.id, snapshot);
+  await broadcast.system(registry, room.id, `${room.members.get(data.id)?.name} is now a co-host`);
+}
+
+export async function demote({ socket, data, deps }) {
+  const { registry, broadcast } = deps;
+  const room = await asHost({ socket, registry });
+  if (!room || !room.has(data.id)) return;
+
+  const snapshot = await registry.withRoom(room.id, (r) => {
+    r.demote(data.id);
+    return r.snapshot();
+  });
+
+  broadcast.toPeer(data.id, "role-changed", { coHost: false, by: socket.data.name });
   broadcast.roomState(room.id, snapshot);
 }
 

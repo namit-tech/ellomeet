@@ -42,6 +42,11 @@ export class Room {
     // allowed in but has not come back yet. Without this they would knock again
     // and wait forever.
     this.approved = new Set();
+    // Co-hosts. Like Zoom: the host can promote members to share the moderation
+    // load — admitting from the lobby, muting, removing, locking — while the
+    // host alone keeps the powers that reshape the room itself (promote/demote,
+    // end for all).
+    this.coHosts = new Set();
     this.chat = [];
   }
 
@@ -61,6 +66,7 @@ export class Room {
     room.members = new Map(state.members || []);
     room.waiting = new Map(state.waiting || []);
     room.approved = new Set(state.approved || []);
+    room.coHosts = new Set(state.coHosts || []);
     room.chat = state.chat || [];
     return room;
   }
@@ -72,6 +78,7 @@ export class Room {
       members: [...this.members.entries()],
       waiting: [...this.waiting.entries()],
       approved: [...this.approved],
+      coHosts: [...this.coHosts],
       chat: this.chat,
     };
   }
@@ -94,6 +101,26 @@ export class Room {
 
   isHost(id) {
     return this.hostId === id;
+  }
+
+  isCoHost(id) {
+    return this.coHosts.has(id);
+  }
+
+  // Host or co-host. This is the check that gates moderation — admitting from
+  // the lobby, muting, removing, locking. The stricter isHost still gates the
+  // things only the owner may do.
+  isModerator(id) {
+    return this.hostId === id || this.coHosts.has(id);
+  }
+
+  /** Host-only. No-op on the host itself or on a non-member. */
+  promote(id) {
+    if (id && id !== this.hostId && this.members.has(id)) this.coHosts.add(id);
+  }
+
+  demote(id) {
+    this.coHosts.delete(id);
   }
 
   // An empty room can't be locked against its own first arrival — otherwise a
@@ -136,11 +163,16 @@ export class Room {
     this.members.delete(id);
     this.waiting.delete(id);
     this.approved.delete(id);
+    this.coHosts.delete(id);
 
     let newHostId = null;
     if (this.hostId === id && !this.isEmpty) {
-      // Hand the room to whoever has been here longest (Map keeps insertion order).
-      this.hostId = this.members.keys().next().value;
+      // The host left. Hand the room to a co-host if there is one (Zoom's rule),
+      // otherwise to whoever has been here longest. Either way they stop being a
+      // co-host, since they are now the host.
+      const nextCoHost = [...this.coHosts].find((cid) => this.members.has(cid));
+      this.hostId = nextCoHost || this.members.keys().next().value;
+      this.coHosts.delete(this.hostId);
       newHostId = this.hostId;
     }
 
@@ -198,6 +230,7 @@ export class Room {
       sharing: m.sharing,
       hand: m.hand,
       isHost: id === this.hostId,
+      isCoHost: this.coHosts.has(id),
     }));
   }
 

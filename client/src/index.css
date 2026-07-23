@@ -151,15 +151,9 @@ input:focus {
 
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand h1 { margin: 0; font-size: 30px; letter-spacing: -0.02em; }
-.brand-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: 13px;
-  display: grid;
-  place-items: center;
-  background: var(--primary);
-  color: var(--primary-contrast);
-}
+/* The wordmark is wide; cap its height and let width follow so it never
+   overpowers the card. */
+.brand-logo { height: 40px; width: auto; object-fit: contain; }
 
 .subtitle { color: var(--muted); margin: 0; font-size: 14.5px; line-height: 1.5; }
 
@@ -201,6 +195,7 @@ label {
   background: var(--panel);
 }
 .room-info { display: flex; align-items: center; gap: 14px; font-size: 14px; }
+.room-logo { height: 26px; width: auto; object-fit: contain; }
 .room-code { color: var(--muted); }
 .room-code strong { color: var(--text); letter-spacing: 0.03em; }
 .room-badge {
@@ -763,6 +758,14 @@ select:focus {
   background: color-mix(in srgb, #f5b544 20%, transparent);
   border-color: #f5b544;
   color: #f5b544;
+}
+.pt-tag.cohost {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  border-color: var(--primary);
+  color: var(--primary);
 }
 .pt-state { display: flex; align-items: center; gap: 7px; color: var(--muted); }
 .pt-state .off { color: var(--danger); }

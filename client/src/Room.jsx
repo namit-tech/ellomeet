@@ -58,6 +58,7 @@ function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
     speaking,
     room,
     isHost,
+    isModerator,
     messages,
     reactions,
     quality,
@@ -245,6 +246,7 @@ function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
     <div className="room">
       <header className="room-header">
         <div className="room-info">
+          <img src="/logo.png" alt="Ello Meet" className="room-logo" />
           <span className="room-badge">
             <Users size={15} /> {participants.length}{maxPeers ? ` / ${maxPeers}` : ""}
           </span>
@@ -306,6 +308,7 @@ function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
             waiting={room.waiting}
             selfId={selfId}
             isHost={isHost}
+            isModerator={isModerator}
             locked={room.locked}
             host={host}
             onClose={() => setPanel(null)}

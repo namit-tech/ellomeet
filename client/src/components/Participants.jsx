@@ -1,18 +1,24 @@
 import {
   X, Mic, MicOff, Video, VideoOff, Hand, MonitorUp,
-  Crown, UserX, Lock, Unlock, PhoneOff, Check,
+  Crown, Shield, ShieldPlus, ShieldMinus, UserX, Lock, Unlock, PhoneOff, Check,
 } from "lucide-react";
 
 /**
- * Participants — who's here, what state they're in, and (for the host) the
- * moderator controls: mute someone, remove them, lock the room, admit the
- * people knocking, or end the meeting for everyone.
+ * Participants — who's here, what state they're in, and the moderator controls.
+ *
+ * Two tiers of authority, matching Zoom:
+ *   - moderator (host OR co-host): admit from the lobby, mute, remove, lock.
+ *   - host only: promote/demote co-hosts, end the meeting for everyone.
+ *
+ * The buttons are gated here for UX, but the server re-checks every action — a
+ * hidden button is not a permission.
  */
 export default function Participants({
   participants,
   waiting,
   selfId,
   isHost,
+  isModerator,
   locked,
   host,
   onClose,
@@ -26,8 +32,8 @@ export default function Participants({
         </button>
       </div>
 
-      {/* Knock queue — host only; nobody else needs to see who's waiting. */}
-      {isHost && waiting.length > 0 && (
+      {/* Knock queue — any moderator can clear it, not just the host. */}
+      {isModerator && waiting.length > 0 && (
         <div className="waiting-list">
           <p className="panel-note">Waiting to join</p>
           {waiting.map((w) => (
@@ -62,6 +68,11 @@ export default function Participants({
                       <Crown size={11} /> Host
                     </span>
                   )}
+                  {p.isCoHost && (
+                    <span className="pt-tag cohost">
+                      <Shield size={11} /> Co-host
+                    </span>
+                  )}
                 </span>
                 <span className="pt-state">
                   {p.hand && <Hand size={13} className="on-hand" />}
@@ -71,33 +82,57 @@ export default function Participants({
                 </span>
               </div>
 
-              {isHost && !isSelf && (
-                <div className="pt-actions">
-                  <button
-                    className="icon-btn"
-                    title="Mute for everyone"
-                    onClick={() => host.mute(p.id)}
-                    disabled={!p.audio}
-                  >
-                    <MicOff size={16} />
-                  </button>
-                  <button
-                    className="icon-btn danger"
-                    title={`Remove ${p.name}`}
-                    onClick={() => host.remove(p.id)}
-                  >
-                    <UserX size={16} />
-                  </button>
-                </div>
-              )}
+              <div className="pt-actions">
+                {/* Promote / demote — host only, never on the host themselves. */}
+                {isHost && !isSelf && !p.isHost && (
+                  p.isCoHost ? (
+                    <button
+                      className="icon-btn"
+                      title="Remove co-host"
+                      onClick={() => host.demote(p.id)}
+                    >
+                      <ShieldMinus size={16} />
+                    </button>
+                  ) : (
+                    <button
+                      className="icon-btn"
+                      title="Make co-host"
+                      onClick={() => host.promote(p.id)}
+                    >
+                      <ShieldPlus size={16} />
+                    </button>
+                  )
+                )}
+
+                {/* Mute / remove — any moderator, but never against the host. */}
+                {isModerator && !isSelf && !p.isHost && (
+                  <>
+                    <button
+                      className="icon-btn"
+                      title="Mute for everyone"
+                      onClick={() => host.mute(p.id)}
+                      disabled={!p.audio}
+                    >
+                      <MicOff size={16} />
+                    </button>
+                    <button
+                      className="icon-btn danger"
+                      title={`Remove ${p.name}`}
+                      onClick={() => host.remove(p.id)}
+                    >
+                      <UserX size={16} />
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           );
         })}
       </div>
 
-      {isHost && (
+      {isModerator && (
         <div className="host-tools">
-          <p className="panel-note">Host controls</p>
+          <p className="panel-note">{isHost ? "Host controls" : "Co-host controls"}</p>
 
           <button className="btn small" onClick={() => host.setLocked(!locked)}>
             {locked ? <Unlock size={15} /> : <Lock size={15} />}
@@ -105,13 +140,16 @@ export default function Participants({
           </button>
           <p className="hint">
             {locked
-              ? "New people must be admitted by you."
+              ? "New people must be admitted by a host or co-host."
               : "Anyone with the link can walk straight in."}
           </p>
 
-          <button className="btn small danger-btn" onClick={host.end}>
-            <PhoneOff size={15} /> End for everyone
-          </button>
+          {/* Ending the meeting is the owner's call alone. */}
+          {isHost && (
+            <button className="btn small danger-btn" onClick={host.end}>
+              <PhoneOff size={15} /> End for everyone
+            </button>
+          )}
         </div>
       )}
     </aside>

@@ -28,7 +28,8 @@ function publishQualityFor(participantCount) {
  * token — that is what the SFU bought us, and it is why the mesh had to go.
  *
  * What differs from web, and only what genuinely differs on a phone:
- *   - no virtual backgrounds: React Native has no <canvas> for the processor
+ *   - virtual backgrounds are a NATIVE frame processor, not a canvas
+ *     (React Native has no canvas) — see SolidBackgroundProcessor.kt
  *   - camera switching is a front/back flip, not a device picker
  *   - screen capture is MediaProjection (Android) rather than a picker dialog,
  *     and needs the foreground service declared in AndroidManifest.xml
@@ -42,6 +43,7 @@ export function useCall({ roomId, name }) {
   const [peers, setPeers] = useState({}); // id -> { camera, mic, screen, screenAudio }
   const [room, setRoom] = useState({ hostId: null, locked: false, participants: [], waiting: [] });
   const [messages, setMessages] = useState([]);
+  const [reactions, setReactions] = useState([]); // transient floating emoji
   const [speaking, setSpeaking] = useState({});
   const [maxPeers, setMaxPeers] = useState(null);
   const [status, setStatus] = useState('connecting');
@@ -51,6 +53,11 @@ export function useCall({ roomId, name }) {
   const [videoOn, setVideoOn] = useState(true);
   const [handRaised, setHandRaised] = useState(false);
   const [sharing, setSharing] = useState(false);
+  // Which way the camera points. Only a front-facing preview should be
+  // mirrored — mirroring the rear camera renders the world back-to-front and
+  // makes any text in shot unreadable.
+  const [facing, setFacing] = useState('user');
+  const [background, setBackgroundState] = useState('none'); // none | black | white
 
   const lkRef = useRef(null);
   const publishedCamRef = useRef(null);
@@ -182,6 +189,11 @@ export function useCall({ roomId, name }) {
         setRoom(state);
       },
       chat: msg => setMessages(prev => [...prev, msg]),
+      reaction: r => {
+        const key = `${r.id}-${r.ts}-${Math.random()}`;
+        setReactions(prev => [...prev, { ...r, key }]);
+        setTimeout(() => setReactions(prev => prev.filter(x => x.key !== key)), 4000);
+      },
       'force-mute': async ({ by }) => {
         await lk.localParticipant.setMicrophoneEnabled(false);
         setAudioOn(false);
@@ -252,14 +264,50 @@ export function useCall({ roomId, name }) {
     emitState({ audio: next });
   }, [audioOn, emitState]);
 
+  /**
+   * Stopping video RELEASES the camera rather than muting the track.
+   *
+   * mute() only stops transmission: the hardware stays open, the OS camera
+   * indicator stays lit, and the local renderer keeps displaying the last
+   * frame it received — which is the "frozen picture" you get instead of a
+   * camera that actually turned off. setCameraEnabled(false) unpublishes and
+   * closes the device.
+   *
+   * The cost is a republish when it comes back on, which LiveKit handles; that
+   * is the right trade for a camera light that behaves the way users expect.
+   */
   const toggleVideo = useCallback(async () => {
+    const lk = lkRef.current;
+    if (!lk) return;
     const next = !videoOn;
-    const track = publishedCamRef.current;
-    if (next) await track?.unmute();
-    else await track?.mute();
+
+    // Flip state first so the UI swaps to the placeholder immediately rather
+    // than holding the stale frame while the camera shuts down.
     setVideoOn(next);
     emitState({ video: next });
-  }, [videoOn, emitState]);
+
+    if (next) {
+      const pub = await lk.localParticipant.setCameraEnabled(true, { facingMode: facing });
+      publishedCamRef.current = pub?.track || null;
+      setLocalCamera(pub ? trackRef(lk.localParticipant, pub) : null);
+
+      // A republished track is a NEW native track, so any effect on the old
+      // one is gone. Re-apply it or the background silently disappears the
+      // first time someone toggles their camera.
+      if (background !== 'none') {
+        const mst = pub?.track?.mediaStreamTrack;
+        try {
+          mst?._setVideoEffects([background === 'black' ? 'bg-black' : 'bg-white']);
+        } catch (err) {
+          console.warn('re-apply background failed:', err);
+        }
+      }
+    } else {
+      await lk.localParticipant.setCameraEnabled(false);
+      publishedCamRef.current = null;
+      setLocalCamera(null);
+    }
+  }, [videoOn, facing, background, emitState]);
 
   const toggleHand = useCallback(() => {
     setHandRaised(prev => {
@@ -272,9 +320,10 @@ export function useCall({ roomId, name }) {
   const flipCamera = useCallback(async () => {
     const track = publishedCamRef.current;
     if (!track) return;
-    const facing = track.mediaStreamTrack?.getSettings?.().facingMode;
-    await track.restartTrack({ facingMode: facing === 'environment' ? 'user' : 'environment' });
-  }, []);
+    const next = facing === 'user' ? 'environment' : 'user';
+    await track.restartTrack({ facingMode: next });
+    setFacing(next);
+  }, [facing]);
 
   const toggleShare = useCallback(async () => {
     const lk = lkRef.current;
@@ -315,6 +364,27 @@ export function useCall({ roomId, name }) {
     }
   }, [sharing, emitState, flash]);
 
+  /**
+   * Virtual background, applied natively.
+   *
+   * The web client pipes the camera through a canvas; React Native has no
+   * canvas, so this instead names a frame processor registered on the native
+   * side (see SolidBackgroundProcessor.kt) and lets WebRTC apply it in the
+   * capture pipeline, before encoding. Passing an empty list clears it.
+   */
+  const setBackground = useCallback(effect => {
+    const mst = publishedCamRef.current?.mediaStreamTrack;
+    if (!mst?._setVideoEffects) return;
+    try {
+      if (effect === 'black') mst._setVideoEffects(['bg-black']);
+      else if (effect === 'white') mst._setVideoEffects(['bg-white']);
+      else mst._setVideoEffects([]);
+      setBackgroundState(effect);
+    } catch (err) {
+      console.warn('setBackground failed:', err);
+    }
+  }, []);
+
   const sendChat = useCallback(text => socket.emit('chat', { text }), []);
   const sendReaction = useCallback(emoji => socket.emit('reaction', { emoji }), []);
 
@@ -333,13 +403,31 @@ export function useCall({ roomId, name }) {
     videoOn,
     handRaised,
     sharing,
+    facing,
     toggleAudio,
     toggleVideo,
     toggleHand,
     toggleShare,
     flipCamera,
+    setBackground,
+    background,
     sendChat,
     sendReaction,
+    reactions,
     isHost: !!selfId && room.hostId === selfId,
+    isModerator:
+      !!selfId &&
+      (room.hostId === selfId ||
+        !!room.participants.find((p) => p.id === selfId)?.isCoHost),
+    host: {
+      mute: (id) => socket.emit('host:mute', { id }),
+      remove: (id) => socket.emit('host:remove', { id }),
+      setLocked: (locked) => socket.emit('host:lock', { locked }),
+      admit: (id) => socket.emit('host:admit', { id }),
+      deny: (id) => socket.emit('host:deny', { id }),
+      promote: (id) => socket.emit('host:promote', { id }),
+      demote: (id) => socket.emit('host:demote', { id }),
+      end: () => socket.emit('host:end'),
+    },
   };
 }

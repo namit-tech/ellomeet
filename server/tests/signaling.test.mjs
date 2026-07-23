@@ -96,6 +96,48 @@ export default async function run(url) {
   await wait(300);
   r.check("host can deny a knocker", eventsOf(dave, "denied").length === 1);
 
+  // --- co-host (Zoom-style shared moderation) -------------------------------
+  // Bob is a normal member. Promote him and he should be able to admit from the
+  // lobby, which he could not do a moment ago.
+  bob.emit("host:promote", { id: carol.id }); // Bob isn't host yet — must fail
+  await wait(250);
+  r.check(
+    "non-host cannot create a co-host",
+    !alice.state.room.participants.find((p) => p.id === carol.id)?.isCoHost
+  );
+
+  alice.emit("host:promote", { id: bob.id });
+  await wait(300);
+  r.check("host can promote a co-host", !!self(bob)?.isCoHost);
+  r.check("promotion is visible to the whole room", !!alice.state.room.participants.find((p) => p.id === bob.id)?.isCoHost);
+
+  const erin = connect(url);
+  erin.emit("join", { roomId: "t1", name: "Erin", media: {} });
+  await wait(350);
+  r.check("erin is knocking", alice.state.room.waiting.some((w) => w.id === erin.id));
+
+  bob.emit("host:admit", { id: erin.id }); // Bob is a co-host now
+  await wait(450);
+  r.check("co-host CAN admit from the lobby", eventsOf(erin, "joined").length === 1);
+
+  // Demote Bob; his moderation powers should evaporate.
+  alice.emit("host:demote", { id: bob.id });
+  await wait(300);
+  r.check("host can demote a co-host", !self(bob)?.isCoHost);
+
+  const frank2 = connect(url);
+  frank2.emit("join", { roomId: "t1", name: "Frank2", media: {} });
+  await wait(350);
+  bob.emit("host:admit", { id: frank2.id }); // Bob is a plain member again
+  await wait(400);
+  r.check("a demoted co-host can no longer admit", eventsOf(frank2, "joined").length === 0);
+  alice.emit("host:deny", { id: frank2.id });
+  await wait(250);
+
+  // Erin leaves so the capacity test below starts from a known, non-full room.
+  erin.close();
+  await wait(300);
+
   // --- capacity (full mesh degrades badly past 4) ---------------------------
   alice.emit("host:lock", { locked: false });
   await wait(250);
