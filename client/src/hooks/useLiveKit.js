@@ -49,6 +49,8 @@ export function useLiveKit({ roomId, name, initial }) {
   const processorRef = useRef(null);
   const publishedCamRef = useRef(null); // what peers actually receive
   const hasJoinedRef = useRef(false);
+  const passcodeRef = useRef("");
+  const doJoinRef = useRef(null);
   const credsTimerRef = useRef(null);
 
   const emitState = useCallback((patch) => socket.emit("state", patch), []);
@@ -184,11 +186,16 @@ export function useLiveKit({ roomId, name, initial }) {
       flash(`${by || "The host"} muted you`);
     };
 
-    const joinPayload = {
-      roomId,
-      name,
-      media: { audio: cfgRef.current.audio ?? true, video: cfgRef.current.video ?? true },
-    };
+    // Join with whatever passcode we currently hold (none until the user is
+    // prompted). Reused by the initial join and the post-admission re-join.
+    const doJoin = () =>
+      socket.emit("join", {
+        roomId,
+        name,
+        media: { audio: cfgRef.current.audio ?? true, video: cfgRef.current.video ?? true },
+        passcode: passcodeRef.current || undefined,
+      });
+    doJoinRef.current = doJoin;
 
     const handlers = {
       livekit: onLiveKitCreds,
@@ -197,12 +204,14 @@ export function useLiveKit({ roomId, name, initial }) {
       // pushing us straight in, because in a cluster our socket may be held by
       // a different instance than the host's — only ours can set our session
       // up. So we ask again, and this time we are on the approved list.
-      admitted: () => socket.emit("join", joinPayload),
+      admitted: () => doJoin(),
       "room-state": setRoom,
       chat: (msg) => setMessages((prev) => [...prev, msg]),
       reaction: onReaction,
       "force-mute": onForceMute,
       "room-full": () => setStatus("full"),
+      "room-not-found": () => setStatus("not-found"),
+      "passcode-required": () => setStatus("passcode"),
       waiting: () => setStatus("waiting"),
       denied: () => setStatus("denied"),
       removed: () => setStatus("removed"),
@@ -211,7 +220,7 @@ export function useLiveKit({ roomId, name, initial }) {
     for (const [event, handler] of Object.entries(handlers)) socket.on(event, handler);
 
     connectSocket();
-    socket.emit("join", joinPayload);
+    doJoin();
 
     return () => {
       cancelled = true;
@@ -370,7 +379,15 @@ export function useLiveKit({ roomId, name, initial }) {
   const isCoHost = !!self?.isCoHost;
   const isModerator = isHost || isCoHost;
 
+  // Re-join with the passcode the user just typed. Same door, now with the key.
+  const submitPasscode = useCallback((value) => {
+    passcodeRef.current = value || "";
+    setStatus("connecting");
+    doJoinRef.current?.();
+  }, []);
+
   return {
+    submitPasscode,
     selfId,
     localCamera,
     localScreen,

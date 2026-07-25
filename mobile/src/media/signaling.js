@@ -20,6 +20,18 @@ export const socket = io(SIGNALING_URL, {
   transports: ['websocket'], // RN has no XHR long-polling worth falling back to
 });
 
+// Ask the server for a fresh, unguessable room. The client never invents codes.
+// Returns { tenant, code, roomId, hasPasscode }; join with `roomId`.
+export async function createRoomCode({ tenant, passcode } = {}) {
+  const res = await fetch(`${SIGNALING_URL}/rooms`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ tenant, passcode }),
+  });
+  if (!res.ok) throw new Error(`mint failed: ${res.status}`);
+  return res.json();
+}
+
 export function connectSocket() {
   if (!socket.connected) socket.connect();
   return socket;

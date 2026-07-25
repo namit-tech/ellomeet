@@ -37,7 +37,7 @@ const REDIS_URL = process.env.REDIS_URL || "";
 
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN }));
-registerHttpRoutes(app);
+app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -66,6 +66,9 @@ const deps = {
   broadcast: createBroadcaster(io),
 };
 
+// HTTP routes need the registry (to mint codes), so register them after deps —
+// and the SPA fallback inside must be the last route added.
+registerHttpRoutes(app, deps);
 registerSocketRoutes(io, deps);
 
 server.listen(PORT, () => {

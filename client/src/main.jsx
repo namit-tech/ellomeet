@@ -22,8 +22,13 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <BrowserRouter>
       <Suspense fallback={<div className="route-loading" />}>
         <Routes>
+          {/* Bare routes use the public tenant; /t/<tenant>/… namespaces the
+              room so different clients can reuse friendly codes without
+              colliding. See server/services/roomKey.js. */}
           <Route path="/" element={<App />} />
-          <Route path="/room/:roomId" element={<Room />} />
+          <Route path="/room/:code" element={<Room />} />
+          <Route path="/t/:tenant" element={<App />} />
+          <Route path="/t/:tenant/room/:code" element={<Room />} />
         </Routes>
       </Suspense>
     </BrowserRouter>

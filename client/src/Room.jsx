@@ -14,9 +14,14 @@ import BackgroundPanel from "./components/BackgroundPanel.jsx";
 import { ReactionOverlay } from "./components/Reactions.jsx";
 
 export default function Room() {
-  const { roomId } = useParams();
+  const { tenant, code } = useParams();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+
+  // The friendly `code` is what people see and share; the server identity is the
+  // tenant-scoped composite key. Keep them separate so the header/link show the
+  // code while the hook joins the real room.
+  const roomId = `${tenant || "public"}.${code}`;
 
   const [name, setName] = useState(() => sessionStorage.getItem("meet:name") || "Guest");
   const [config, setConfig] = useState(null); // set by PreJoin; null = not joined yet
@@ -26,7 +31,7 @@ export default function Room() {
   if (!config) {
     return (
       <PreJoin
-        roomId={roomId}
+        roomId={code}
         name={name}
         onChangeName={(n) => {
           setName(n);
@@ -40,6 +45,7 @@ export default function Room() {
   return (
     <Call
       roomId={roomId}
+      displayCode={code}
       name={name}
       config={config}
       theme={theme}
@@ -49,8 +55,9 @@ export default function Room() {
   );
 }
 
-function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
+function Call({ roomId, displayCode, name, config, theme, toggleTheme, onExit }) {
   const {
+    submitPasscode,
     selfId,
     localCamera,
     localScreen,
@@ -180,6 +187,20 @@ function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
     );
   }
 
+  if (status === "passcode") {
+    return <PasscodeGate onSubmit={submitPasscode} onExit={onExit} />;
+  }
+
+  if (status === "not-found") {
+    return (
+      <Message
+        title="Meeting not found"
+        body="This code isn't an active meeting. Ask the host for a fresh link, or start a new meeting."
+        action={{ label: "Back home", onClick: onExit }}
+      />
+    );
+  }
+
   if (status === "full") {
     return (
       <Message
@@ -251,7 +272,7 @@ function Call({ roomId, name, config, theme, toggleTheme, onExit }) {
             <Users size={15} /> {participants.length}{maxPeers ? ` / ${maxPeers}` : ""}
           </span>
           <span className="room-code">
-            Room <strong>{roomId}</strong>
+            Room <strong>{displayCode}</strong>
           </span>
           {room.locked && (
             <span className="room-locked" title="Locked — new people must be admitted">
@@ -385,6 +406,38 @@ function Message({ icon, title, body, action }) {
         <p className="subtitle">{body}</p>
         <button className="btn primary" onClick={action.onClick}>
           {action.label}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Shown when the server says the room needs a passcode we haven't provided (or
+// got wrong). Re-submitting re-joins; a wrong code just lands back here.
+function PasscodeGate({ onSubmit, onExit }) {
+  const [value, setValue] = useState("");
+  return (
+    <div className="centered">
+      <div className="landing-card">
+        <h2>Passcode required</h2>
+        <p className="subtitle">This meeting is protected. Enter the passcode to join.</p>
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Passcode"
+          maxLength={64}
+          onKeyDown={(e) => e.key === "Enter" && value.trim() && onSubmit(value.trim())}
+        />
+        <button
+          className="btn primary"
+          disabled={!value.trim()}
+          onClick={() => onSubmit(value.trim())}
+        >
+          Join
+        </button>
+        <button className="btn ghost" onClick={onExit}>
+          Cancel
         </button>
       </div>
     </div>

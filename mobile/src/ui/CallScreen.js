@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  useWindowDimensions,
   Modal,
   Share,
   StatusBar,
@@ -24,6 +25,7 @@ import {
   Mic,
   MicOff,
   Minimize2,
+  MoreHorizontal,
   PictureInPicture,
   MonitorUp,
   MonitorX,
@@ -86,6 +88,7 @@ function Call({ roomId, name, onLeave }) {
   // edge-to-edge, so without real insets the header renders under the status
   // bar and the controls sit under the gesture pill.
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
 
   const {
     selfId,
@@ -115,6 +118,7 @@ function Call({ roomId, name, onLeave }) {
     sendReaction,
     setBackground,
     background,
+    submitPasscode,
     host,
   } = useCall({ roomId, name });
 
@@ -196,6 +200,37 @@ function Call({ roomId, name, onLeave }) {
   // the world back-to-front and makes any text in shot unreadable.
   const mirrorFor = t => t.participant.id === selfId && !t.isScreen && facing === 'user';
 
+  // All in-call controls, most-important first. Leave is rendered separately
+  // (always pinned, always red), so it is not in this list.
+  const allControls = [
+    { key: 'mute', label: audioOn ? 'Mute' : 'Unmute', Icon: audioOn ? Mic : MicOff, off: !audioOn, onPress: toggleAudio },
+    { key: 'video', label: videoOn ? 'Stop' : 'Start', Icon: videoOn ? VideoIcon : VideoOff, off: !videoOn, onPress: toggleVideo },
+    { key: 'share', label: sharing ? 'Stop' : 'Share', Icon: sharing ? MonitorX : MonitorUp, active: sharing, onPress: toggleShare },
+    { key: 'people', label: 'People', Icon: Users, active: panel === 'people', badge: room.participants.length, onPress: () => setPanel(p => (p === 'people' ? null : 'people')) },
+    { key: 'chat', label: 'Chat', Icon: MessageSquare, active: panel === 'chat', onPress: () => setPanel(p => (p === 'chat' ? null : 'chat')) },
+    { key: 'effects', label: 'Effects', Icon: Sparkles, active: background !== 'none', onPress: () => setPanel(p => (p === 'bg' ? null : 'bg')) },
+    { key: 'react', label: 'React', Icon: Smile, active: panel === 'react', onPress: () => setPanel(p => (p === 'react' ? null : 'react')) },
+    { key: 'raise', label: 'Raise', Icon: Hand, active: handRaised, onPress: toggleHand },
+    { key: 'flip', label: 'Flip', Icon: RefreshCw, onPress: flipCamera },
+  ];
+
+  // How many controls fit this exact screen. Each button needs ~58dp; Leave and
+  // (if needed) More claim slots too. Everything past that folds into the More
+  // sheet, so nothing is ever clipped on a narrow phone.
+  const SLOT = 58;
+  const capacity = Math.max(3, Math.floor(width / SLOT));
+  const fitsAll = capacity >= allControls.length + 1; // +1 for Leave, no More
+  const inlineCount = fitsAll ? allControls.length : Math.max(2, capacity - 2);
+  const inlineControls = allControls.slice(0, inlineCount);
+  const overflowControls = allControls.slice(inlineCount);
+  // Surface a dot on More when something hidden wants attention (people count).
+  const overflowBadge = overflowControls.some(c => c.key === 'people')
+    ? room.participants.length
+    : 0;
+
+
+  if (status === 'passcode') return <PasscodeGate onSubmit={submitPasscode} onCancel={onLeave} />;
+  if (status === 'not-found') return <Message title="Meeting not found" body="This code isn't an active meeting. Ask the host for a fresh link." action={{ label: 'Back', onPress: onLeave }} />;
   if (status === 'full') return <Message title="Room is full" body={`This meeting is at its limit of ${maxPeers || ''} participants.`} action={{ label: 'Back', onPress: onLeave }} />;
   if (status === 'error') return <Message title="Couldn't start camera" body="Check permissions and try again." action={{ label: 'Back', onPress: onLeave }} />;
   if (status === 'ended') return <Message title="Meeting ended" body="The host ended this meeting." action={{ label: 'Back', onPress: onLeave }} />;
@@ -334,18 +369,44 @@ function Call({ roomId, name, onLeave }) {
         </TouchableOpacity>
       ) : (
         <View style={styles.controls}>
-          <Ctrl label={audioOn ? 'Mute' : 'Unmute'} Icon={audioOn ? Mic : MicOff} off={!audioOn} onPress={toggleAudio} />
-          <Ctrl label={videoOn ? 'Stop' : 'Start'} Icon={videoOn ? VideoIcon : VideoOff} off={!videoOn} onPress={toggleVideo} />
-          <Ctrl label={sharing ? 'Stop' : 'Share'} Icon={sharing ? MonitorX : MonitorUp} active={sharing} onPress={toggleShare} />
-          <Ctrl label="Flip" Icon={RefreshCw} onPress={flipCamera} />
-          <Ctrl label="Raise" Icon={Hand} active={handRaised} onPress={toggleHand} />
-          <Ctrl label="React" Icon={Smile} active={panel === 'react'} onPress={() => setPanel(p => (p === 'react' ? null : 'react'))} />
-          <Ctrl label="Effects" Icon={Sparkles} active={background !== 'none'} onPress={() => setPanel(p => (p === 'bg' ? null : 'bg'))} />
-          <Ctrl label="People" Icon={Users} badge={room.participants.length} active={panel === 'people'} onPress={() => setPanel(p => (p === 'people' ? null : 'people'))} />
-          <Ctrl label="Chat" Icon={MessageSquare} active={panel === 'chat'} onPress={() => setPanel(p => (p === 'chat' ? null : 'chat'))} />
+          {inlineControls.map(c => (
+            <Ctrl key={c.key} {...c} />
+          ))}
+          {overflowControls.length > 0 && (
+            <Ctrl
+              label="More"
+              Icon={MoreHorizontal}
+              active={panel === 'more'}
+              badge={overflowBadge}
+              onPress={() => setPanel(p => (p === 'more' ? null : 'more'))}
+            />
+          )}
           <Ctrl label="Leave" Icon={PhoneOff} danger onPress={onLeave} />
         </View>
       )}
+
+      {/* Overflow controls that didn't fit the bar. A sheet, not a dropdown:
+          consistent with Chat/People, roomy enough for labels, and it never
+          clips off the edge of a small screen. */}
+      <Sheet visible={panel === 'more'} title="More" onClose={() => setPanel(null)}>
+        <View style={styles.moreGrid}>
+          {overflowControls.map(c => (
+            <TouchableOpacity
+              key={c.key}
+              style={styles.moreItem}
+              onPress={() => {
+                setPanel(null);
+                c.onPress();
+              }}
+            >
+              <View style={[styles.moreIcon, c.active && styles.moreIconOn]}>
+                <c.Icon size={22} color={c.active ? '#4f8cff' : '#eef1f6'} />
+              </View>
+              <Text style={styles.moreLabel}>{c.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Sheet>
 
       {panel === 'react' && (
         <View style={[styles.reactBar, { bottom: 100 + insets.bottom }]}>
@@ -556,6 +617,35 @@ function Sheet({ visible, title, children, onClose }) {
   );
 }
 
+function PasscodeGate({ onSubmit, onCancel }) {
+  const [value, setValue] = useState('');
+  return (
+    <View style={[styles.root, styles.centered]}>
+      <Text style={styles.msgTitle}>Passcode required</Text>
+      <Text style={styles.msgBody}>This meeting is protected. Enter the passcode to join.</Text>
+      <TextInput
+        style={styles.pcInput}
+        value={value}
+        onChangeText={setValue}
+        placeholder="Passcode"
+        placeholderTextColor="#6b7280"
+        autoFocus
+        secureTextEntry
+      />
+      <TouchableOpacity
+        style={[styles.msgBtn, !value.trim() && { opacity: 0.4 }]}
+        disabled={!value.trim()}
+        onPress={() => onSubmit(value.trim())}
+      >
+        <Text style={styles.msgBtnText}>Join</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.pcCancel} onPress={onCancel}>
+        <Text style={styles.pcCancelText}>Cancel</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 function Message({ title, body, action, spinner }) {
   return (
     <View style={[styles.root, styles.centered]}>
@@ -696,6 +786,12 @@ const styles = StyleSheet.create({
   },
   sheetTitle: { color: '#eef1f6', fontSize: 16, fontWeight: '600' },
 
+  moreGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 12, gap: 4 },
+  moreItem: { width: '25%', alignItems: 'center', paddingVertical: 14, gap: 8 },
+  moreIcon: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1e232d', borderWidth: 1, borderColor: '#2a2f3a' },
+  moreIconOn: { borderColor: '#4f8cff', backgroundColor: '#1d3357' },
+  moreLabel: { color: '#c9ced8', fontSize: 12 },
+
   bgRow: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 18 },
   bgOption: { alignItems: 'center', gap: 8, padding: 10, borderRadius: 12, borderWidth: 1, borderColor: 'transparent' },
   bgOptionOn: { borderColor: '#4f8cff', backgroundColor: '#1d3357' },
@@ -747,4 +843,7 @@ const styles = StyleSheet.create({
   msgBody: { color: '#9aa2b1', fontSize: 14, marginTop: 8, textAlign: 'center' },
   msgBtn: { marginTop: 18, backgroundColor: '#4f8cff', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 },
   msgBtnText: { color: '#fff', fontWeight: '600' },
+  pcInput: { marginTop: 16, width: '80%', backgroundColor: '#0b0d12', borderWidth: 1, borderColor: '#2a2f3a', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, color: '#fff', fontSize: 15, textAlign: 'center' },
+  pcCancel: { marginTop: 12, padding: 8 },
+  pcCancelText: { color: '#98a1b0', fontSize: 14 },
 });

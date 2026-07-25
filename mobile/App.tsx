@@ -21,35 +21,44 @@ import {
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import CallScreen from './src/ui/CallScreen';
+import { createRoomCode } from './src/media/signaling';
 
-// Pull the room id out of a https://…/room/<id> link. Returns null for
-// anything else, so an unrelated deep link can never drop someone into a call.
-function roomFromUrl(url: string | null): string | null {
+// Parse a https://…/room/<code> or …/t/<tenant>/room/<code> link into its
+// tenant and code. Returns null for anything else, so an unrelated deep link
+// can never drop someone into a call.
+function parseRoom(url: string | null): { tenant: string; code: string } | null {
   if (!url) return null;
+  const t = url.match(/\/t\/([^/]+)\/room\/([^/?#]+)/);
+  if (t) return { tenant: decodeURIComponent(t[1]), code: decodeURIComponent(t[2]) };
   const m = url.match(/\/room\/([^/?#]+)/);
-  return m ? decodeURIComponent(m[1]) : null;
+  if (m) return { tenant: 'public', code: decodeURIComponent(m[1]) };
+  return null;
 }
 
 function App() {
   const [session, setSession] = useState<{ roomId: string; name: string } | null>(null);
-  const [roomId, setRoomId] = useState('');
+  const [code, setCode] = useState('');
+  const [tenant, setTenant] = useState('public');
   const [name, setName] = useState('');
+  const [creating, setCreating] = useState(false);
 
-  // Opening a meet.elloindia.in/room/<id> link should land the user on the
-  // pre-filled join screen, not the empty one. Two cases to cover:
-  //   - app was launched BY the link  → getInitialURL()
-  //   - app was already open           → the 'url' event
+  // Opening a room link should land the user on the pre-filled join screen, not
+  // the empty one. Two cases: the app was launched BY the link (getInitialURL),
+  // or it was already open (the 'url' event).
   useEffect(() => {
     Linking.getInitialURL().then(url => {
-      const id = roomFromUrl(url);
-      if (id) setRoomId(id);
+      const r = parseRoom(url);
+      if (r) {
+        setTenant(r.tenant);
+        setCode(r.code);
+      }
     });
     const sub = Linking.addEventListener('url', ({ url }) => {
-      const id = roomFromUrl(url);
-      if (id) {
-        setRoomId(id);
-        // If they're mid-call in another room, drop back to join so the
-        // pre-filled code is visible rather than silently ignored.
+      const r = parseRoom(url);
+      if (r) {
+        setTenant(r.tenant);
+        setCode(r.code);
+        // If they're mid-call, drop back to join so the pre-filled code shows.
         setSession(null);
       }
     });
@@ -68,7 +77,9 @@ function App() {
     );
   }
 
-  const canJoin = roomId.trim().length > 0;
+  const canJoin = code.trim().length > 0;
+  // The room's server identity is tenant-scoped; the field only shows the code.
+  const roomKey = () => `${tenant}.${code.trim()}`;
 
   return (
     <SafeAreaProvider>
@@ -88,8 +99,8 @@ function App() {
             placeholderTextColor="#6b7280"
             autoCapitalize="none"
             autoCorrect={false}
-            value={roomId}
-            onChangeText={setRoomId}
+            value={code}
+            onChangeText={setCode}
           />
           <TextInput
             style={styles.input}
@@ -103,10 +114,35 @@ function App() {
             style={[styles.button, !canJoin && styles.buttonOff]}
             disabled={!canJoin}
             onPress={() =>
-              setSession({ roomId: roomId.trim(), name: name.trim() || 'Guest' })
+              setSession({ roomId: roomKey(), name: name.trim() || 'Guest' })
             }
           >
             <Text style={styles.buttonText}>Join</Text>
+          </TouchableOpacity>
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* The server mints the code; the app never invents one. */}
+          <TouchableOpacity
+            style={[styles.button, styles.buttonGhost, creating && styles.buttonOff]}
+            disabled={creating}
+            onPress={async () => {
+              setCreating(true);
+              try {
+                const room = await createRoomCode();
+                setSession({ roomId: room.roomId, name: name.trim() || 'Guest' });
+              } catch (err) {
+                console.warn('create failed', err);
+              } finally {
+                setCreating(false);
+              }
+            }}
+          >
+            <Text style={styles.buttonText}>{creating ? 'Creating…' : 'New meeting'}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -137,6 +173,10 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   buttonOff: { opacity: 0.4 },
+  buttonGhost: { backgroundColor: '#16181d', borderWidth: 1, borderColor: '#2a2f3a' },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 4 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#2a2f3a' },
+  dividerText: { color: '#6b7280', fontSize: 12 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
 

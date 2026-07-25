@@ -89,6 +89,24 @@ export function createRedisStore({
       return raw ? Room.fromState(id, JSON.parse(raw), maxPeers) : null;
     },
 
+    // Freshly minted codes get a short-lived reservation so their first join may
+    // create the room. NX so a code is never reissued over a live one. The
+    // passcode hash rides along as JSON.
+    async issueCode(code, { ttlMs, passcodeHash = null }) {
+      await redis.set(`issued:${code}`, JSON.stringify({ passcodeHash }), "PX", ttlMs, "NX");
+    },
+
+    // Non-consuming read (see memory.store for why). PX expiry cleans it up.
+    async claimCode(code) {
+      const raw = await redis.get(`issued:${code}`).catch(() => null);
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return { passcodeHash: null };
+      }
+    },
+
     async deleteRoom(id) {
       await redis.del(key(id));
     },

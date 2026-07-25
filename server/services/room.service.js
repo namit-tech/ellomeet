@@ -47,6 +47,9 @@ export class Room {
     // host alone keeps the powers that reshape the room itself (promote/demote,
     // end for all).
     this.coHosts = new Set();
+    // Optional shared passcode (salt:hash, never plaintext). Adopted from the
+    // reservation when the room is first created; verified on every join.
+    this.passcodeHash = null;
     this.chat = [];
   }
 
@@ -67,6 +70,7 @@ export class Room {
     room.waiting = new Map(state.waiting || []);
     room.approved = new Set(state.approved || []);
     room.coHosts = new Set(state.coHosts || []);
+    room.passcodeHash = state.passcodeHash ?? null;
     room.chat = state.chat || [];
     return room;
   }
@@ -79,6 +83,7 @@ export class Room {
       waiting: [...this.waiting.entries()],
       approved: [...this.approved],
       coHosts: [...this.coHosts],
+      passcodeHash: this.passcodeHash,
       chat: this.chat,
     };
   }
@@ -133,6 +138,10 @@ export class Room {
 
   approve(id) {
     this.approved.add(id);
+  }
+
+  setPasscode(hash) {
+    this.passcodeHash = hash || null;
   }
 
   addMember(id, name, media = {}) {
@@ -273,5 +282,15 @@ export class RoomRegistry {
 
   delete(id) {
     return this.store.deleteRoom(id);
+  }
+
+  /** Reserve a freshly minted code. opts = { ttlMs, passcodeHash }. */
+  issueCode(code, opts) {
+    return this.store.issueCode(code, opts);
+  }
+
+  /** The reservation for a code ({ passcodeHash }) or null if none is live. */
+  claimCode(code) {
+    return this.store.claimCode(code);
   }
 }

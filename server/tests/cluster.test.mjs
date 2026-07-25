@@ -1,4 +1,4 @@
-import { createReporter, connect, wait, eventsOf } from "./harness.mjs";
+import { createReporter, connect, wait, eventsOf, mintRoom } from "./harness.mjs";
 
 /**
  * Two server instances, one room.
@@ -25,7 +25,7 @@ export default async function clusterTests(urlA, urlB) {
     return 0;
   }
 
-  const room = `cl-${Date.now()}`;
+  const room = (await mintRoom(urlA)).roomId;
 
   // Alice on instance A, Bob on instance B.
   const alice = connect(urlA);

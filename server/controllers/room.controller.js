@@ -1,3 +1,5 @@
+import { verifyPasscode } from "../services/passcode.js";
+
 /**
  * Joining, leaving, presence state, reactions.
  *
@@ -57,7 +59,37 @@ export async function join({ socket, data, deps }) {
   const { registry, broadcast } = deps;
   const { roomId, name, media } = data;
 
+  // JOIN ≠ CREATE. A code only opens a room if the room is already live, or if
+  // the code was freshly minted by the server (a live reservation). A code
+  // nobody minted and nobody is in — someone typing `001` or enumerating — is
+  // simply "not found". This, not the code length alone, is what stops a
+  // stranger from conjuring a room by guessing its name.
+  const existing = await registry.get(roomId);
+  let reservation = null;
+  if (!existing || existing.isEmpty) {
+    reservation = await registry.claimCode(roomId);
+    if (!reservation) {
+      socket.emit("room-not-found");
+      console.log(`[join] rejected unknown room ${roomId} from ${socket.id}`);
+      return;
+    }
+  }
+
+  // Passcode gate, verified OUTSIDE withRoom — scrypt is deliberately slow and
+  // must not run while the per-room lock is held. The hash comes from the live
+  // room if it exists, else from the reservation the creator set.
+  const passcodeHash = existing?.passcodeHash || reservation?.passcodeHash || null;
+  if (passcodeHash && !verifyPasscode(data.passcode, passcodeHash)) {
+    socket.emit("passcode-required");
+    return;
+  }
+
   const decision = await registry.withRoom(roomId, (room) => {
+    // First creation adopts the reservation's passcode, so later joiners are
+    // gated too.
+    if (reservation?.passcodeHash && !room.passcodeHash) {
+      room.setPasscode(reservation.passcodeHash);
+    }
     if (room.isFull) return { verdict: "full" };
     if (room.requiresApproval(socket.id)) {
       room.knock(socket.id, name, media);

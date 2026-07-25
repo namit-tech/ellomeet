@@ -12,8 +12,10 @@ import { z } from "zod";
 const SocketId = z.string().min(1).max(64);
 
 export const JoinSchema = z.object({
-  roomId: z.string().trim().min(1).max(64),
+  roomId: z.string().trim().min(1).max(80), // "<tenant>.<code>"
   name: z.string().trim().min(1).max(30).catch("Guest"),
+  // Optional room passcode. Only present when the room requires one.
+  passcode: z.string().max(64).optional(),
   media: z
     .object({
       audio: z.boolean().default(true),

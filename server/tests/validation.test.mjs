@@ -1,4 +1,4 @@
-import { createReporter, wait, connect, self, wasRejected } from "./harness.mjs";
+import { createReporter, wait, connect, self, wasRejected, mintRoom } from "./harness.mjs";
 
 /**
  * A connected client is untrusted input. Every one of these payloads used to
@@ -11,9 +11,10 @@ export default async function run(url) {
   const alice = connect(url);
   const mallory = connect(url);
 
-  alice.emit("join", { roomId: "v1", name: "Alice", media: { audio: true, video: true } });
+  const v1 = (await mintRoom(url)).roomId;
+  alice.emit("join", { roomId: v1, name: "Alice", media: { audio: true, video: true } });
   await wait(300);
-  mallory.emit("join", { roomId: "v1", name: "Mallory", media: {} });
+  mallory.emit("join", { roomId: v1, name: "Mallory", media: {} });
   await wait(400);
   r.check("baseline: both joined", alice.state.room?.participants.length === 2);
 

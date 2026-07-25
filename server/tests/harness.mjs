@@ -34,7 +34,7 @@ export function connect(url) {
   for (const event of [
     "joined", "waiting", "denied", "removed", "meeting-ended",
     "room-full", "force-mute", "peer-joined", "peer-left", "reaction",
-    "admitted", "livekit",
+    "admitted", "livekit", "room-not-found", "passcode-required",
   ]) {
     socket.on(event, (payload) => socket.state.events.push({ event, payload }));
   }
@@ -54,6 +54,18 @@ export function connect(url) {
   });
 
   return socket;
+}
+
+// Mint a real room via the same endpoint the client uses. Rooms can no longer
+// be conjured by typing an id, so every test that joins must first mint. Returns
+// the full response { tenant, code, roomId, hasPasscode }; join with `roomId`.
+export async function mintRoom(url, body = {}) {
+  const res = await fetch(`${url}/rooms`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
 }
 
 export const eventsOf = (socket, name) =>

@@ -1,4 +1,4 @@
-import { createReporter, wait, connect, eventsOf, self } from "./harness.mjs";
+import { createReporter, wait, connect, eventsOf, self, mintRoom } from "./harness.mjs";
 
 /**
  * The room state machine, end to end: roster, host authority, the waiting room,
@@ -14,9 +14,10 @@ export default async function run(url) {
   const alice = connect(url);
   const bob = connect(url);
 
-  alice.emit("join", { roomId: "t1", name: "Alice", media: { audio: true, video: true } });
+  const t1 = (await mintRoom(url)).roomId;
+  alice.emit("join", { roomId: t1, name: "Alice", media: { audio: true, video: true } });
   await wait(300);
-  bob.emit("join", { roomId: "t1", name: "Bob", media: { audio: false, video: true } });
+  bob.emit("join", { roomId: t1, name: "Bob", media: { audio: false, video: true } });
   await wait(400);
 
   r.check("both people appear on the roster", alice.state.room?.participants.length === 2);
@@ -69,7 +70,7 @@ export default async function run(url) {
   r.check("room reports locked", alice.state.room.locked === true);
 
   const carol = connect(url);
-  carol.emit("join", { roomId: "t1", name: "Carol", media: {} });
+  carol.emit("join", { roomId: t1, name: "Carol", media: {} });
   await wait(400);
   r.check("knocker is put in the waiting room", eventsOf(carol, "waiting").length === 1);
   r.check("knocker is NOT on the roster yet", alice.state.room.participants.length === 2);
@@ -90,7 +91,7 @@ export default async function run(url) {
   );
 
   const dave = connect(url);
-  dave.emit("join", { roomId: "t1", name: "Dave", media: {} });
+  dave.emit("join", { roomId: t1, name: "Dave", media: {} });
   await wait(350);
   alice.emit("host:deny", { id: dave.id });
   await wait(300);
@@ -112,7 +113,7 @@ export default async function run(url) {
   r.check("promotion is visible to the whole room", !!alice.state.room.participants.find((p) => p.id === bob.id)?.isCoHost);
 
   const erin = connect(url);
-  erin.emit("join", { roomId: "t1", name: "Erin", media: {} });
+  erin.emit("join", { roomId: t1, name: "Erin", media: {} });
   await wait(350);
   r.check("erin is knocking", alice.state.room.waiting.some((w) => w.id === erin.id));
 
@@ -126,7 +127,7 @@ export default async function run(url) {
   r.check("host can demote a co-host", !self(bob)?.isCoHost);
 
   const frank2 = connect(url);
-  frank2.emit("join", { roomId: "t1", name: "Frank2", media: {} });
+  frank2.emit("join", { roomId: t1, name: "Frank2", media: {} });
   await wait(350);
   bob.emit("host:admit", { id: frank2.id }); // Bob is a plain member again
   await wait(400);
@@ -144,9 +145,9 @@ export default async function run(url) {
 
   const eve = connect(url);
   const frank = connect(url);
-  eve.emit("join", { roomId: "t1", name: "Eve", media: {} });
+  eve.emit("join", { roomId: t1, name: "Eve", media: {} });
   await wait(300);
-  frank.emit("join", { roomId: "t1", name: "Frank", media: {} }); // the 5th
+  frank.emit("join", { roomId: t1, name: "Frank", media: {} }); // the 5th
   await wait(400);
   r.check("5th participant is rejected", eventsOf(frank, "room-full").length === 1);
 

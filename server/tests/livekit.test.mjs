@@ -1,4 +1,4 @@
-import { createReporter, connect, wait, eventsOf } from "./harness.mjs";
+import { createReporter, connect, wait, eventsOf, mintRoom } from "./harness.mjs";
 
 /**
  * The media credential must follow admission, not the request for it.
@@ -11,7 +11,7 @@ import { createReporter, connect, wait, eventsOf } from "./harness.mjs";
 export default async function livekitTests(url) {
   const r = createReporter("livekit tokens");
 
-  const room = `lk-${Date.now()}`;
+  const room = (await mintRoom(url)).roomId;
 
   // --- an admitted member gets a token ---
   const host = connect(url);

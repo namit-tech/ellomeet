@@ -6,6 +6,7 @@ import signaling from "./signaling.test.mjs";
 import validation from "./validation.test.mjs";
 import livekit from "./livekit.test.mjs";
 import cluster from "./cluster.test.mjs";
+import security from "./security.test.mjs";
 
 /**
  * Boots real signaling servers on scratch ports and drives them with real
@@ -78,6 +79,7 @@ async function waitForServer(url, timeoutMs = 15000) {
     failures += await signaling(URL);
     failures += await validation(URL);
     failures += await livekit(URL);
+    failures += await security(URL);
     failures += await cluster(URL, REDIS_URL ? URL_B : null);
   } catch (err) {
     console.error("\nTest run threw:", err);

@@ -957,3 +957,6 @@ kbd {
    rather than a spinner: on a warm cache it appears for a frame or two, and a
    flashed spinner reads as jank. */
 .route-loading { min-height: 100vh; background: var(--bg); }
+
+/* "(optional)" qualifier next to a field label. */
+.label-hint { color: var(--muted); font-weight: 400; font-size: 11px; }

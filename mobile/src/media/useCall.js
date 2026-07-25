@@ -62,6 +62,8 @@ export function useCall({ roomId, name }) {
   const lkRef = useRef(null);
   const publishedCamRef = useRef(null);
   const hasJoinedRef = useRef(false);
+  const passcodeRef = useRef('');
+  const doJoinRef = useRef(null);
   const credsTimerRef = useRef(null);
 
   const emitState = useCallback(patch => socket.emit('state', patch), []);
@@ -164,7 +166,14 @@ export function useCall({ roomId, name }) {
         else if (state === ConnectionState.Connected) setStatus('connected');
       });
 
-    const joinPayload = { roomId, name, media: { audio: true, video: true } };
+    const doJoin = () =>
+      socket.emit('join', {
+        roomId,
+        name,
+        media: { audio: true, video: true },
+        passcode: passcodeRef.current || undefined,
+      });
+    doJoinRef.current = doJoin;
 
     const handlers = {
       livekit: onLiveKitCreds,
@@ -183,7 +192,7 @@ export function useCall({ roomId, name }) {
       },
       // The host approved us. Our socket may be held by a different server
       // instance than theirs, so admission is a handshake: we ask again.
-      admitted: () => socket.emit('join', joinPayload),
+      admitted: () => doJoin(),
       'room-state': (state) => {
         console.log('[call] roster:', state?.participants?.length, 'participant(s)');
         setRoom(state);
@@ -201,6 +210,8 @@ export function useCall({ roomId, name }) {
         flash(`${by || 'The host'} muted you`);
       },
       'room-full': () => setStatus('full'),
+      'room-not-found': () => setStatus('not-found'),
+      'passcode-required': () => setStatus('passcode'),
       waiting: () => setStatus('waiting'),
       denied: () => setStatus('denied'),
       removed: () => setStatus('removed'),
@@ -411,6 +422,11 @@ export function useCall({ roomId, name }) {
     flipCamera,
     setBackground,
     background,
+    submitPasscode: (value) => {
+      passcodeRef.current = value || '';
+      setStatus('connecting');
+      doJoinRef.current?.();
+    },
     sendChat,
     sendReaction,
     reactions,
